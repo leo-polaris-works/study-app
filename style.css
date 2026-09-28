@@ -1,0 +1,716 @@
+:root {
+  --color-bg: #fafafa;
+  --color-text: #222;
+  --color-primary: #2b6cb0;
+  --color-primary-text: #fff;
+  --color-border: #d8d8d8;
+  --color-muted: #777;
+  --color-warn: #c53030;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.screen {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 14px 14px 40px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 22px;
+  text-align: center;
+  margin: 8px 0 14px;
+}
+
+h2 {
+  font-size: 17px;
+  margin: 16px 0 8px;
+}
+
+.btn {
+  font-size: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary);
+}
+
+.btn-big {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  margin: 10px 0;
+}
+
+.btn-menu {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  font-size: 17px;
+  margin: 8px 0;
+}
+
+.btn-small {
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  padding: 6px 0;
+  font-size: 15px;
+}
+
+/* TOP */
+.week-card {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 4px 14px 12px;
+  margin-bottom: 14px;
+}
+
+.week-card h2 {
+  margin-top: 10px;
+}
+
+.week-numbers {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 10px;
+}
+
+.week-numbers span {
+  display: block;
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.week-numbers small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 70px;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.bar-track {
+  background: #eee;
+  border-radius: 5px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  background: var(--color-primary);
+  height: 100%;
+}
+
+.bar-value {
+  text-align: right;
+  color: var(--color-muted);
+}
+
+.menu-heading {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: 18px 0 0;
+}
+
+.dev-tools {
+  margin-top: 40px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+  text-align: center;
+}
+
+.dev-tools-label {
+  font-size: 12px;
+  color: #888;
+}
+
+/* 入力 */
+.screen-input {
+  padding-bottom: 40px;
+}
+
+.input-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-date {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.date-label {
+  position: relative;
+  font-size: 16px;
+  font-weight: bold;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.date-label input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.field {
+  margin: 10px 0;
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 4px;
+}
+
+.field-note {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: 4px;
+}
+
+.group-label {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin: 6px 0 3px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  font-size: 14px;
+  padding: 7px 11px;
+  min-height: 38px;
+  border-radius: 19px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.chip.selected {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.chip-hint {
+  display: block;
+  font-size: 10px;
+  opacity: 0.75;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.amount-custom {
+  width: 120px;
+  font-size: 16px;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+#issue-count.warn {
+  color: var(--color-warn);
+  font-weight: bold;
+}
+
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
+  background: rgba(250, 250, 250, 0.95);
+  border-top: 1px solid var(--color-border);
+}
+
+.bottom-bar .btn-big {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* 確認 */
+.confirm-list {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.confirm-list dt {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.confirm-list dd {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* 登録結果 */
+.screen-done {
+  text-align: center;
+}
+
+.done-illust {
+  width: 300px;
+  height: 300px;
+  max-width: 80vw;
+  max-height: 80vw;
+  object-fit: contain;
+}
+
+.done-message {
+  font-size: 18px;
+  margin: 12px 0 6px;
+}
+
+.done-facts {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-bottom: 18px;
+}
+
+/* 学習記録設定 */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.setting-row {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.setting-row.inactive {
+  opacity: 0.55;
+}
+
+.setting-label {
+  width: 100%;
+  font-size: 16px;
+  padding: 6px;
+}
+
+.setting-extra {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.setting-select,
+.setting-number {
+  font-size: 14px;
+  padding: 4px;
+}
+
+.setting-number {
+  width: 64px;
+}
+
+.setting-note {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.setting-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 現在地バー（ショッピングサイトの購入手順のような表示） */
+.stepper {
+  display: flex;
+  list-style: none;
+  margin: 4px 0 14px;
+  padding: 0;
+}
+
+.step {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-muted);
+}
+
+.step::before {
+  content: "";
+  position: absolute;
+  top: 11px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--color-border);
+  z-index: 0;
+}
+
+.step:first-child::before {
+  display: none;
+}
+
+.step.done::before,
+.step.current::before {
+  background: var(--color-primary);
+}
+
+.step-dot {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.step-label {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.step.done .step-dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.step.current .step-dot {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: bold;
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.2);
+}
+
+.step.current {
+  color: var(--color-primary);
+  font-weight: bold;
+}
+
+.step.skipped .step-dot {
+  border-style: dashed;
+}
+
+.step.clickable {
+  cursor: pointer;
+}
+
+.step-title {
+  font-size: 20px;
+  margin: 8px 0 6px;
+}
+
+.chips-big .chip {
+  font-size: 17px;
+  padding: 12px 18px;
+  min-height: 52px;
+  border-radius: 26px;
+}
+
+.chips-big {
+  margin: 12px 0;
+  gap: 10px;
+}
+
+/* 量（学習内容ごと） */
+.amount-block {
+  margin: 14px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.amount-title {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.amount-block .chips-big {
+  margin: 8px 0;
+}
+
+/* 時間の配分 */
+.alloc-box {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.alloc-row {
+  display: grid;
+  grid-template-columns: 1fr auto 56px auto 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.alloc-name {
+  font-size: 15px;
+}
+
+.alloc-value {
+  text-align: center;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.alloc-pct {
+  text-align: right;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.alloc-total {
+  text-align: right;
+  font-size: 13px;
+  color: var(--color-muted);
+  padding-top: 6px;
+}
+
+.btn-step {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.confirm-list dd div {
+  margin-bottom: 2px;
+}
+
+.step-label-line {
+  display: block;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.issue-free {
+  width: 100%;
+  font-size: 16px;
+  padding: 10px;
+  margin: 4px 0 8px;
+}
+
+/* 学習内容（項目ごとに時間を選ぶ） */
+.remain-box {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff7e6;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 16px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.remain-box.ok {
+  background: #e6f6ea;
+  border-color: #b7dfc0;
+}
+
+.time-row {
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.time-name {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.chips-mini {
+  gap: 6px;
+}
+
+.chips-mini .chip {
+  font-size: 15px;
+  padding: 6px 12px;
+  min-height: 40px;
+  min-width: 46px;
+}
+
+.chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 縦に並ぶ項目の余白を広げる */
+#step-body .field-label {
+  margin: 22px 0 8px;
+}
+
+#step-body .group-label {
+  margin: 20px 0 8px;
+}
+
+#step-body .chips-big {
+  margin: 10px 0 16px;
+}
+
+#step-body .amount-block {
+  margin: 22px 0;
+  padding-bottom: 12px;
+}
+
+#step-body .time-row {
+  padding: 12px 0;
+}
+
+#step-body .time-name {
+  margin-bottom: 8px;
+}
+
+.date-nav {
+  margin-bottom: 4px;
+}
+
+/* 1行に収める数値チップ（量・時間の配分） */
+.chips-oneline {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.chips-oneline .chip {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 0;
+  min-height: 46px;
+  border-radius: 23px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.chips-time {
+  gap: 5px;
+  margin: 0;
+}
+
+.chips-time .chip {
+  padding: 8px 0;
+  min-height: 42px;
+  font-size: 15px;
+}
+
+.chips-single .chip {
+  flex: 0 0 96px;
+}
+
+.time-row .amount-custom {
+  margin-top: 8px;
+}
+
+/* 記録の一覧・詳細 */
+.record-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.record-item-main {
+  font-weight: bold;
+}
+
+.record-item-sub {
+  color: var(--color-muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.btn-danger {
+  color: var(--color-warn);
+  border-color: var(--color-warn);
+}
+
+.field-warn {
+  color: var(--color-warn);
+  font-size: 13px;
+  margin: 8px 0;
+}

@@ -1,0 +1,9 @@
+{
+  "name": "勉強記録（モック）",
+  "short_name": "勉強記録",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#2b6cb0",
+  "icons": []
+}
