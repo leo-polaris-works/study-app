@@ -12,6 +12,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
@@ -713,4 +717,52 @@ h2 {
   color: var(--color-warn);
   font-size: 13px;
   margin: 8px 0;
+}
+
+/* 保存の状態・鍵の画面 */
+.sync-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-muted);
+}
+
+.sync-line.warn {
+  color: var(--color-warn);
+  border-color: var(--color-warn);
+}
+
+.sync-input {
+  display: block;
+  width: 100%;
+  font-size: 16px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.sync-status {
+  font-size: 14px;
+  color: var(--color-muted);
+  margin: 8px 0 14px;
+  line-height: 1.6;
+}
+
+.lock-message {
+  color: var(--color-warn);
+  font-size: 15px;
+  margin: 8px 0;
+}
+
+.done-sync {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: -10px 0 18px;
 }

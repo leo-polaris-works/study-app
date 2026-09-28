@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
 <title>勉強記録（モック）</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="stylesheet" href="style.css" />
@@ -12,6 +13,8 @@
 <!-- TOP -->
 <section id="screen-top" class="screen" hidden>
   <h1>勉強記録</h1>
+
+  <button class="sync-line" id="sync-line" type="button"></button>
 
   <div class="week-card">
     <h2>今週</h2>
@@ -32,9 +35,10 @@
   <div class="menu">
     <button class="btn btn-menu" id="menu-plan">学習計画</button>
     <button class="btn btn-menu" id="menu-settings">学習記録設定</button>
+    <button class="btn btn-menu" id="menu-sync">保存の設定（鍵）</button>
   </div>
 
-  <div class="dev-tools">
+  <div class="dev-tools" id="dev-tools" hidden>
     <p class="dev-tools-label">実機テスト用（本番では使わない）</p>
     <button class="btn btn-small" id="btn-seed-sample">サンプルデータを入れる</button>
     <button class="btn btn-small" id="btn-clear-sample">サンプルデータを消す</button>
@@ -59,7 +63,7 @@
 <section id="screen-records" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
   <h2>最近の記録</h2>
-  <div class="field-note">直近14日。タップすると、修正・削除できます</div>
+  <div class="field-note" id="records-note">直近14日。タップすると、修正・削除できます</div>
   <div id="records-list"></div>
 </section>
 
@@ -77,6 +81,7 @@
   <img id="done-illust" class="done-illust" alt="" hidden />
   <p class="done-message" id="done-message"></p>
   <p class="done-facts" id="done-facts"></p>
+  <p class="done-sync" id="done-sync"></p>
   <button class="btn btn-primary btn-big" id="btn-done-again">続けて入力</button>
   <button class="btn btn-big" id="btn-done-top">TOPへ</button>
 </section>
@@ -89,9 +94,42 @@
   <div id="settings-body"></div>
 </section>
 
+<!-- 保存の設定（鍵）。鍵が使えない間は、この画面だけが開く（ロック） -->
+<section id="screen-sync" class="screen" hidden>
+  <button class="btn btn-back" id="btn-sync-back">← TOPへ</button>
+  <h2 id="sync-title">保存の設定（鍵）</h2>
+  <p class="lock-message" id="sync-lock-message" hidden></p>
+  <div class="sync-status" id="sync-status"></div>
+
+  <div id="sync-form">
+    <label class="field-label" for="sync-token">鍵</label>
+    <input class="sync-input" id="sync-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…" />
+    <div class="field-warn" id="sync-err-token" hidden></div>
+
+    <label class="field-label" for="sync-expires">鍵の有効期限</label>
+    <input class="sync-input" id="sync-expires" type="date" />
+    <div class="field-warn" id="sync-err-expires" hidden></div>
+
+    <div class="field-label">この端末の使い方</div>
+    <div class="chips chips-big" id="sync-mode"></div>
+    <div class="field-warn" id="sync-err-mode" hidden></div>
+
+    <div class="field-note" id="sync-target"></div>
+    <div class="field-warn" id="sync-err-connect" hidden></div>
+    <button class="btn btn-primary btn-big" id="btn-sync-connect">つないで確認する</button>
+  </div>
+
+  <div id="sync-manage">
+    <button class="btn btn-big" id="btn-sync-now">今すぐ同期</button>
+    <button class="btn btn-big btn-danger" id="btn-sync-disconnect">鍵を消す</button>
+  </div>
+</section>
+
 <script src="config.js"></script>
 <script src="master.js"></script>
 <script src="data.js"></script>
+<script src="github.js"></script>
+<script src="sync.js"></script>
 <script src="messages.js"></script>
 <script src="images.js"></script>
 <script src="app.js"></script>

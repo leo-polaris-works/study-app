@@ -13,7 +13,12 @@ function el(tag, className, text) {
   return node;
 }
 
+let currentScreen = null;
+
 function showScreen(id) {
+  if (getLockState().locked) id = 'screen-sync';
+  if (id === 'screen-sync') renderSyncScreen();
+  currentScreen = id;
   document.querySelectorAll('.screen').forEach((s) => {
     s.hidden = s.id !== id;
   });
@@ -37,7 +42,18 @@ function goTo(id) {
 }
 
 // --- TOP ---
+function isReadOnly() {
+  return getSyncSummary().mode === 'read';
+}
+
 function renderTop() {
+  // 「見るだけ」の端末では、記録・設定のボタンを出さない
+  const writable = !isReadOnly();
+  ['menu-record', 'menu-review', 'menu-plan', 'menu-settings'].forEach((id) => {
+    $(id).hidden = !writable;
+  });
+  renderSyncLine();
+
   const s = weekSummary();
   $('week-total').textContent = formatMinutes(s.totalMinutes);
   $('week-days').textContent = `${s.dayCount}日`;
@@ -60,7 +76,7 @@ function renderTop() {
 }
 
 $('menu-record').addEventListener('click', () => {
-  startInput();
+  if (!isReadOnly()) startInput();
 });
 
 function openPlaceholder(title) {
@@ -144,6 +160,7 @@ function resetSubjectDependents() {
 }
 
 function startInput() {
+  if (isReadOnly()) return;
   form = newForm();
   stepIndex = 0;
   renderStep();
@@ -739,6 +756,7 @@ function renderConfirmStep(body) {
     else saveRecord(record);
     renderDone(record, editing);
     showScreen('screen-done');
+    kickSync();
   });
 }
 
@@ -769,7 +787,7 @@ function recordToForm(r) {
 
 function startEdit(id) {
   const r = findRecord(id);
-  if (!r) return;
+  if (!r || isReadOnly()) return;
   form = recordToForm(r);
   stepIndex = STEPS.length - 1;
   renderStep();
@@ -779,6 +797,7 @@ function startEdit(id) {
 let detailId = null;
 
 function renderRecordsList() {
+  $('records-note').textContent = isReadOnly() ? '直近14日の記録' : '直近14日。タップすると、修正・削除できます';
   const box = $('records-list');
   box.innerHTML = '';
   const list = recentRecords();
@@ -807,6 +826,8 @@ function openRecordDetail(id) {
   const created = r.createdAt.slice(5, 16).replace('T', ' ');
   addConfirmRow(list, '記録した日時', created);
   addConfirmRow(list, '端末', `${r.device.kind}（${r.device.id}）`);
+  $('btn-detail-edit').hidden = isReadOnly();
+  $('btn-detail-delete').hidden = isReadOnly();
   showScreen('screen-record-detail');
 }
 
@@ -820,11 +841,12 @@ $('btn-detail-back').addEventListener('click', () => {
 });
 $('btn-detail-edit').addEventListener('click', () => startEdit(detailId));
 $('btn-detail-delete').addEventListener('click', () => {
-  if (!confirm('この記録を削除しますか？')) return;
+  if (isReadOnly() || !confirm('この記録を削除しますか？')) return;
   markRecordDeleted(detailId);
   renderTop();
   renderRecordsList();
   showScreen('screen-records');
+  kickSync();
 });
 
 // --- 登録結果 ---
@@ -839,6 +861,8 @@ function renderDone(record, updated) {
     hasIssue: record.issues.length > 0,
   });
   $('done-facts').textContent = `${displayDate(record.date)}の合計 ${formatMinutes(dayMinutes)}／今週 ${weekDays}日記録`;
+
+  renderDoneSync();
 
   const img = $('done-illust');
   if (ILLUSTRATIONS.length > 0) {
@@ -1034,6 +1058,184 @@ function renderSettingsBody() {
   body.appendChild(reset);
 }
 
+// --- 保存の状態（TOP の1行・登録結果） ---
+function formatSyncTime(iso) {
+  return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} ${iso.slice(11, 16)}`;
+}
+
+function syncLineInfo(s) {
+  if (s.locked) return { text: lockMessage(s.lockReason), warn: true };
+  let text;
+  let warn = false;
+  if (s.running) {
+    text = '同期中…';
+  } else if (s.pending > 0) {
+    text = `未送信 ${s.pending}件（${s.error ? s.error.message : '通信できたら自動で送ります'}）`;
+    warn = !!s.error;
+  } else if (s.error) {
+    text = s.error.message;
+    warn = true;
+  } else if (s.lastSyncAt) {
+    text = `${s.mode === 'read' ? '最新の記録を取り込みました' : '保存済み ✓'}（${formatSyncTime(s.lastSyncAt)}）`;
+  } else {
+    text = 'まだ同期していません';
+  }
+  if (s.notice) text += `　${s.notice}`;
+  if (s.expiryWarn) {
+    text += `　鍵の期限まであと${s.expiryDaysLeft}日`;
+    warn = true;
+  }
+  return { text, warn };
+}
+
+function renderSyncLine() {
+  const info = syncLineInfo(getSyncSummary());
+  const line = $('sync-line');
+  line.textContent = info.text;
+  line.classList.toggle('warn', info.warn);
+}
+
+function renderDoneSync() {
+  const s = getSyncSummary();
+  let text = '送信しました ✓';
+  if (s.running) text = '送信中…';
+  else if (s.pending > 0) text = s.error ? `端末に保存しました。${s.error.message}` : '端末に保存しました。通信できたら自動で送ります';
+  $('done-sync').textContent = text;
+}
+
+function kickSync() {
+  syncNow({ force: true }).catch(() => {});
+}
+
+$('sync-line').addEventListener('click', () => {
+  renderSyncScreen();
+  showScreen('screen-sync');
+});
+
+// --- 保存の設定（鍵）。鍵が使えない間は、アプリ全体の代わりにこの画面だけが出る ---
+let syncModeChoice = null;
+
+function setFieldError(id, message) {
+  const box = $(id);
+  box.textContent = message || '';
+  box.hidden = !message;
+}
+
+function clearSyncErrors() {
+  ['sync-err-token', 'sync-err-expires', 'sync-err-mode', 'sync-err-connect'].forEach((id) => setFieldError(id, ''));
+}
+
+function renderSyncModeChips() {
+  const box = $('sync-mode');
+  box.innerHTML = '';
+  [
+    ['write', '記録する'],
+    ['read', '見るだけ'],
+  ].forEach(([value, label]) => {
+    box.appendChild(
+      makeChip(label, syncModeChoice === value, () => {
+        syncModeChoice = value;
+        renderSyncModeChips();
+      })
+    );
+  });
+}
+
+function renderSyncScreen() {
+  const s = getSyncSummary();
+  $('btn-sync-back').hidden = s.locked;
+  $('sync-title').textContent = s.locked ? '鍵を入れてください' : '保存の設定（鍵）';
+  const lockBox = $('sync-lock-message');
+  lockBox.hidden = !s.locked;
+  lockBox.textContent = s.locked ? lockMessage(s.lockReason) : '';
+
+  const status = $('sync-status');
+  status.innerHTML = '';
+  if (s.configured && !s.locked) {
+    status.appendChild(el('div', null, `この端末：${s.mode === 'read' ? '見るだけ' : '記録する'}`));
+    if (s.expiresOn) {
+      const left = s.expiryDaysLeft !== null ? `（あと${s.expiryDaysLeft}日）` : '';
+      status.appendChild(el('div', s.expiryWarn ? 'field-warn' : null, `鍵の期限：${s.expiresOn}${left}`));
+    }
+    if (s.mode !== 'read') status.appendChild(el('div', null, `送信待ち：${s.pending}件`));
+    status.appendChild(el('div', null, s.lastSyncAt ? `最後の同期：${formatSyncTime(s.lastSyncAt)}` : 'まだ同期していません'));
+    if (s.error) status.appendChild(el('div', 'field-warn', s.error.message));
+  }
+
+  if (syncModeChoice === null) syncModeChoice = s.mode;
+  renderSyncModeChips();
+  $('sync-target').textContent = `保存先：${SYNC_DEFAULTS.owner}/${SYNC_DEFAULTS.repo}（非公開）`;
+  $('btn-sync-connect').textContent = s.configured && !s.locked ? '鍵を入れ直す' : 'つないで確認する';
+  $('sync-manage').hidden = !s.configured || s.locked;
+}
+
+$('menu-sync').addEventListener('click', () => {
+  renderSyncScreen();
+  showScreen('screen-sync');
+});
+$('btn-sync-back').addEventListener('click', () => goTo('screen-top'));
+
+$('btn-sync-connect').addEventListener('click', async () => {
+  clearSyncErrors();
+  const btn = $('btn-sync-connect');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '確認中…';
+  const result = await connectWithToken({
+    token: $('sync-token').value,
+    expiresOn: $('sync-expires').value,
+    mode: syncModeChoice,
+  });
+  btn.disabled = false;
+  btn.textContent = label;
+  if (!result.ok) {
+    const e = result.errors || {};
+    setFieldError('sync-err-token', e.token);
+    setFieldError('sync-err-expires', e.expiresOn);
+    setFieldError('sync-err-mode', e.mode);
+    setFieldError('sync-err-connect', result.message);
+    return;
+  }
+  $('sync-token').value = '';
+  goTo('screen-top');
+  kickSync();
+});
+
+$('btn-sync-now').addEventListener('click', kickSync);
+
+$('btn-sync-disconnect').addEventListener('click', () => {
+  const pending = pendingIds().length;
+  const note = pending > 0 ? `\n送信待ちの記録が${pending}件あります（端末に残り、新しい鍵を入れると送られます）。` : '';
+  if (!confirm(`鍵を消しますか？\nこの端末に保存している送信済みの記録の控えも消えます（保存先には残ります）。${note}`)) return;
+  disconnectSync();
+  syncModeChoice = null;
+  showScreen('screen-sync');
+});
+
+// 同期の状態が変わったとき、開いている画面を更新する（入力中の画面は触らない）
+function handleSyncChange() {
+  if (getLockState().locked) {
+    showScreen('screen-sync');
+    return;
+  }
+  renderSyncLine();
+  if (currentScreen === 'screen-top') renderTop();
+  else if (currentScreen === 'screen-records') renderRecordsList();
+  else if (currentScreen === 'screen-sync') renderSyncScreen();
+  else if (currentScreen === 'screen-done') renderDoneSync();
+}
+
 // --- 初期化 ---
+if (typeof location !== 'undefined' && /[?&]dev=1/.test(location.search || '')) $('dev-tools').hidden = false;
+
+onSyncChange(handleSyncChange);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (getLockState().locked) showScreen('screen-sync'); // 開いている間に期限が切れた場合
+  syncNow({}).catch(() => {});
+});
+window.addEventListener('online', kickSync);
+
 renderTop();
 showScreen('screen-top');
+if (!getLockState().locked) kickSync();

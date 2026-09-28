@@ -2,6 +2,9 @@
 
 const SUBJECTS = ['国語', '数学', '英語', '理科', '社会'];
 
+// 記録の保存先（非公開リポジトリ）。名前は秘密ではない。鍵（トークン）はここに書かない
+const SYNC_DEFAULTS = { owner: 'leo-polaris-works', repo: 'study-records' };
+
 const UNITS = ['問題', '語', '字', 'ページ', '回', '個', 'なし'];
 
 const UNIT_PRESETS = {

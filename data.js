@@ -1,8 +1,20 @@
-// 記録の保存と集計（モック段階は端末内 localStorage。形式は 記録設計/02_記録データの形式.md）
+// 記録の保存と集計。画面は端末内（localStorage）の記録だけを読み書きし、GitHub との送受信は sync.js が行う。
+// 形式は 記録設計/02_記録データの形式.md
 
-const RECORDS_KEY = 'study_mock_records_v5';
+const RECORDS_KEY = 'study_records_v6';
+const OLD_MOCK_RECORDS_KEY = 'study_mock_records_v5';
+const META_KEY = 'study_sync_meta_v1'; // 記録ごとの保存先パスと sha の控え
+const OUTBOX_KEY = 'study_outbox_v1'; // 送信待ちの記録ID
 const DEVICE_KEY = 'study_device_v1';
 const SCHEMA_VERSION = 1;
+const SAMPLE_PREFIX = 'sample-';
+
+// モック段階の記録は引き継がない
+try {
+  localStorage.removeItem(OLD_MOCK_RECORDS_KEY);
+} catch (e) {
+  // localStorage が使えなければ何もしない
+}
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -94,6 +106,7 @@ function saveRecord(record) {
   const records = loadRecords();
   records.push(record);
   writeRecords(records);
+  markPending(record);
 }
 
 function updateRecord(record) {
@@ -102,6 +115,7 @@ function updateRecord(record) {
   if (i >= 0) records[i] = record;
   else records.push(record);
   writeRecords(records);
+  markPending(record);
 }
 
 function markRecordDeleted(id) {
@@ -111,6 +125,93 @@ function markRecordDeleted(id) {
   r.deleted = true;
   r.updatedAt = localIso();
   writeRecords(records);
+  markPending(r);
+}
+
+// --- 送信の控え（保存先パス・sha・送信待ち） ---
+function readJson(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v === null || v === undefined ? fallback : v;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function isSampleId(id) {
+  return String(id).startsWith(SAMPLE_PREFIX);
+}
+
+// 保存先：最初に登録したときの勉強日の月で固定する（あとで日付を直しても動かさない）
+function defaultRecordPath(record) {
+  return `records/${record.date.slice(0, 7)}/${record.id}.json`;
+}
+
+function getMeta(id) {
+  return readJson(META_KEY, {})[id] || {};
+}
+
+function setMeta(id, patch) {
+  const all = readJson(META_KEY, {});
+  all[id] = Object.assign({}, all[id], patch);
+  localStorage.setItem(META_KEY, JSON.stringify(all));
+}
+
+function pendingIds() {
+  const list = readJson(OUTBOX_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+// 送信待ちに登録する（サンプルは送らない）。保存先パスは最初の1回だけ決める
+function markPending(record) {
+  if (isSampleId(record.id)) return;
+  if (!getMeta(record.id).path) setMeta(record.id, { path: defaultRecordPath(record) });
+  const ids = pendingIds();
+  if (!ids.includes(record.id)) ids.push(record.id);
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(ids));
+}
+
+function clearPending(id) {
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(pendingIds().filter((x) => x !== id)));
+}
+
+// 記録の形の確認（他の端末から取り込む JSON は、画面に出す前に必ず通す）
+function isValidRecord(r) {
+  const isStr = (v) => typeof v === 'string';
+  const hasLabel = (x) => x && typeof x === 'object' && isStr(x.label);
+  if (!r || typeof r !== 'object') return false;
+  if (!isStr(r.id) || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return false;
+  if (typeof r.schemaVersion !== 'number' || typeof r.totalMinutes !== 'number') return false;
+  if (!SUBJECTS.includes(r.subject) || !hasLabel(r.activity)) return false;
+  if (r.timeBand !== null && !hasLabel(r.timeBand)) return false;
+  if (!Array.isArray(r.fields) || !r.fields.every((f) => hasLabel(f) && typeof f.minutes === 'number')) return false;
+  if (!Array.isArray(r.materials) || !r.materials.every(hasLabel)) return false;
+  if (!Array.isArray(r.issues) || !r.issues.every(hasLabel)) return false;
+  if (r.accuracy !== null && !(r.accuracy && typeof r.accuracy.level === 'number' && isStr(r.accuracy.label))) return false;
+  if (!r.device || !isStr(r.device.id) || !isStr(r.device.kind)) return false;
+  if (!isStr(r.createdAt) || !isStr(r.updatedAt) || typeof r.deleted !== 'boolean') return false;
+  return true;
+}
+
+// 他の端末から取り込んだ記録を反映する（送信待ちには入れない）
+function applyRemoteRecord(record, path, sha) {
+  const records = loadRecords();
+  const i = records.findIndex((r) => r.id === record.id);
+  if (i >= 0) records[i] = record;
+  else records.push(record);
+  writeRecords(records);
+  setMeta(record.id, { path, sha });
+}
+
+// 送信済みの記録の控えを消す（鍵を消すとき）。送信待ちの記録は残す
+function clearSyncedRecords() {
+  const pending = pendingIds();
+  writeRecords(loadRecords().filter((r) => pending.includes(r.id)));
+  const meta = readJson(META_KEY, {});
+  Object.keys(meta).forEach((id) => {
+    if (!pending.includes(id)) delete meta[id];
+  });
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
 function findRecord(id) {
@@ -181,7 +282,7 @@ function seedSampleData() {
     const now = localIso();
     records.push({
       schemaVersion: SCHEMA_VERSION,
-      id: 'sample-' + i,
+      id: SAMPLE_PREFIX + i,
       date: shiftDate(today, r.d),
       timeBand: { id: r.band[0], label: r.band[1] },
       totalMinutes: r.minutes,
@@ -201,5 +302,5 @@ function seedSampleData() {
 }
 
 function clearSampleData() {
-  writeRecords(loadRecords().filter((r) => !String(r.id).startsWith('sample-')));
+  writeRecords(loadRecords().filter((r) => !isSampleId(r.id)));
 }
