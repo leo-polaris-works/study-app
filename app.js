@@ -1164,7 +1164,6 @@ function renderSyncScreen() {
 
   if (syncModeChoice === null) syncModeChoice = s.mode;
   renderSyncModeChips();
-  $('sync-target').textContent = `保存先：${SYNC_DEFAULTS.owner}/${SYNC_DEFAULTS.repo}（非公開）`;
   $('btn-sync-connect').textContent = s.configured && !s.locked ? '鍵を入れ直す' : 'つないで確認する';
   $('sync-manage').hidden = !s.configured || s.locked;
 }

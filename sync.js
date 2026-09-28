@@ -50,7 +50,7 @@ function getLockState(today = formatDate(new Date())) {
 function lockMessage(reason) {
   if (reason === 'auth') return '鍵が使えません（正しくないか、期限切れ・無効になっています）。お父さんに新しい鍵を入れてもらってください';
   if (reason === 'expired') return '鍵の期限が切れています。お父さんに新しい鍵を入れてもらってください';
-  return 'はじめに、鍵を入れてください（お父さんが入れます）';
+  return 'はじめに、鍵を入れてください';
 }
 
 // 鍵の期限まで何日か（設定なしは null）
