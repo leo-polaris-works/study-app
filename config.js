@@ -148,7 +148,7 @@ const DEFAULT_MASTERS = {
     { id: 'd-50', label: '50分', minutes: 50, active: true },
     { id: 'd-55', label: '55分', minutes: 55, active: true },
     { id: 'd-60', label: '60分', minutes: 60, active: true },
-    { id: 'd-90', label: '90分', minutes: 90, active: false },
+    { id: 'd-90', label: '90分', minutes: 90, active: true },
   ],
 
   issue: [
