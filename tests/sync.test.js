@@ -30,7 +30,7 @@ function newWorld() {
 }
 
 async function connect(dev, token, mode) {
-  const r = await dev.ctx.connectWithToken({ token, expiresOn: FAR, mode: mode || 'write' });
+  const r = await dev.ctx.connectWithToken({ token, mode: mode || 'write' });
   assert.strictEqual(r.ok, true, JSON.stringify(r));
 }
 
@@ -66,35 +66,28 @@ test('日本語・絵文字を含む JSON が base64 で往復できる', () => 
 });
 
 // --- 鍵の入力チェック ---
-test('鍵・期限・使い方の入力チェック', () => {
+test('鍵・使い方の入力チェック', () => {
   const dev = makeDevice(newWorld(), 'iPad');
-  const v = (o) => dev.ctx.validateTokenInput(o, '2026-10-01');
-  assert.ok(v({ token: '', expiresOn: '2026-12-28', mode: 'write' }).errors.token.includes('入力されていません'));
-  assert.ok(v({ token: 'github_pat_ AAAA' + 'A'.repeat(50), expiresOn: '2026-12-28', mode: 'write' }).errors.token.includes('使えない文字'));
-  assert.ok(v({ token: 'ｇｉｔｈｕｂ_pat_' + 'A'.repeat(50), expiresOn: '2026-12-28', mode: 'write' }).errors.token.includes('使えない文字'));
-  assert.ok(v({ token: 'ghp_' + 'A'.repeat(50), expiresOn: '2026-12-28', mode: 'write' }).errors.token.includes('この形の鍵は使えません'));
-  assert.ok(v({ token: 'github_pat_abc', expiresOn: '2026-12-28', mode: 'write' }).errors.token.includes('短すぎ'));
-  assert.ok(v({ token: TOKEN_W, expiresOn: '', mode: 'write' }).errors.expiresOn);
-  assert.ok(v({ token: TOKEN_W, expiresOn: '2026-02-30', mode: 'write' }).errors.expiresOn);
-  assert.ok(v({ token: TOKEN_W, expiresOn: '2026-09-30', mode: 'write' }).errors.expiresOn.includes('過ぎて'));
-  assert.ok(v({ token: TOKEN_W, expiresOn: '2026-12-28', mode: 'x' }).errors.mode);
-  const ok = v({ token: '  ' + TOKEN_W + '\n', expiresOn: '2026-10-01', mode: 'read' });
+  const v = (o) => dev.ctx.validateTokenInput(o);
+  assert.ok(v({ token: '', mode: 'write' }).errors.token.includes('入力されていません'));
+  assert.ok(v({ token: 'github_pat_ AAAA' + 'A'.repeat(50), mode: 'write' }).errors.token.includes('使えない文字'));
+  assert.ok(v({ token: 'ｇｉｔｈｕｂ_pat_' + 'A'.repeat(50), mode: 'write' }).errors.token.includes('使えない文字'));
+  assert.ok(v({ token: 'ghp_' + 'A'.repeat(50), mode: 'write' }).errors.token.includes('この形の鍵は使えません'));
+  assert.ok(v({ token: 'github_pat_abc', mode: 'write' }).errors.token.includes('短すぎ'));
+  assert.ok(v({ token: TOKEN_W, mode: 'x' }).errors.mode);
+  const ok = v({ token: '  ' + TOKEN_W + '\n', mode: 'read' });
   assert.strictEqual(ok.ok, true);
   assert.strictEqual(ok.token, TOKEN_W);
 });
 
 // --- ロック ---
-test('ロック：鍵なし・入力後・期限切れ・鍵が使えない（401）・通信できないだけ', async () => {
+test('ロック：鍵なし・入力後・鍵が使えない（401）・通信できないだけ', async () => {
   const server = newWorld();
   const dev = makeDevice(server, 'iPad');
   eq(dev.ctx.getLockState(), { locked: true, reason: 'nokey' });
 
   await connect(dev, TOKEN_W);
   assert.strictEqual(dev.ctx.getLockState().locked, false);
-  assert.strictEqual(dev.ctx.getLockState('2100-01-01').reason, 'expired');
-  assert.strictEqual(dev.ctx.getSyncSummary('2099-12-20').expiryWarn, true);
-  assert.strictEqual(dev.ctx.getSyncSummary('2099-12-20').expiryDaysLeft, 11);
-  assert.strictEqual(dev.ctx.getSyncSummary('2099-06-01').expiryWarn, false);
 
   dev.offline = true;
   const s = await dev.ctx.syncNow({ force: true });
@@ -133,11 +126,11 @@ test('401 でロックされても未送信の記録は残り、新しい鍵で�
 test('接続の確認：誤った鍵・保存先違い・通信不可・読み取り専用の鍵（書き込みモード）', async () => {
   const server = newWorld();
   const dev = makeDevice(server, 'iPad');
-  const tryConnect = (token, mode) => dev.ctx.connectWithToken({ token, expiresOn: FAR, mode: mode || 'write' });
+  const tryConnect = (token, mode) => dev.ctx.connectWithToken({ token, mode: mode || 'write' });
 
   let r = await tryConnect('github_pat_' + 'Z'.repeat(60));
   assert.strictEqual(r.ok, false);
-  assert.ok(r.message.includes('正しくない'));
+  assert.ok(r.message.includes('鍵が使えませんでした'));
 
   server.repoName = 'other';
   r = await tryConnect(TOKEN_W);

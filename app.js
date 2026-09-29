@@ -1081,10 +1081,6 @@ function syncLineInfo(s) {
     text = 'まだ同期していません';
   }
   if (s.notice) text += `　${s.notice}`;
-  if (s.expiryWarn) {
-    text += `　鍵の期限まであと${s.expiryDaysLeft}日`;
-    warn = true;
-  }
   return { text, warn };
 }
 
@@ -1122,7 +1118,7 @@ function setFieldError(id, message) {
 }
 
 function clearSyncErrors() {
-  ['sync-err-token', 'sync-err-expires', 'sync-err-mode', 'sync-err-connect'].forEach((id) => setFieldError(id, ''));
+  ['sync-err-token', 'sync-err-mode', 'sync-err-connect'].forEach((id) => setFieldError(id, ''));
 }
 
 function renderSyncModeChips() {
@@ -1153,10 +1149,6 @@ function renderSyncScreen() {
   status.innerHTML = '';
   if (s.configured && !s.locked) {
     status.appendChild(el('div', null, `この端末：${s.mode === 'read' ? '見るだけ' : '記録する'}`));
-    if (s.expiresOn) {
-      const left = s.expiryDaysLeft !== null ? `（あと${s.expiryDaysLeft}日）` : '';
-      status.appendChild(el('div', s.expiryWarn ? 'field-warn' : null, `鍵の期限：${s.expiresOn}${left}`));
-    }
     if (s.mode !== 'read') status.appendChild(el('div', null, `送信待ち：${s.pending}件`));
     status.appendChild(el('div', null, s.lastSyncAt ? `最後の同期：${formatSyncTime(s.lastSyncAt)}` : 'まだ同期していません'));
     if (s.error) status.appendChild(el('div', 'field-warn', s.error.message));
@@ -1182,7 +1174,6 @@ $('btn-sync-connect').addEventListener('click', async () => {
   btn.textContent = '確認中…';
   const result = await connectWithToken({
     token: $('sync-token').value,
-    expiresOn: $('sync-expires').value,
     mode: syncModeChoice,
   });
   btn.disabled = false;
@@ -1190,7 +1181,6 @@ $('btn-sync-connect').addEventListener('click', async () => {
   if (!result.ok) {
     const e = result.errors || {};
     setFieldError('sync-err-token', e.token);
-    setFieldError('sync-err-expires', e.expiresOn);
     setFieldError('sync-err-mode', e.mode);
     setFieldError('sync-err-connect', result.message);
     return;
@@ -1230,7 +1220,7 @@ if (typeof location !== 'undefined' && /[?&]dev=1/.test(location.search || '')) 
 onSyncChange(handleSyncChange);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  if (getLockState().locked) showScreen('screen-sync'); // 開いている間に期限が切れた場合
+  if (getLockState().locked) showScreen('screen-sync'); // 開いている間に鍵が使えなくなった場合
   syncNow({}).catch(() => {});
 });
 window.addEventListener('online', kickSync);
