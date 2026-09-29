@@ -766,3 +766,50 @@ h2 {
   color: var(--color-muted);
   margin: -10px 0 18px;
 }
+
+/* 機能利用設定：項目ごとの見出しと、二択のスイッチ */
+.sync-section {
+  margin: 0 0 22px;
+}
+
+.sync-heading {
+  font-size: 18px;
+  font-weight: bold;
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 5px solid var(--color-primary);
+}
+
+.sync-help {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: 0 0 8px;
+}
+
+.seg-group {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.seg-group .chip.seg {
+  flex: 1;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 8px;
+  font-size: 17px;
+  background: #fff;
+}
+
+.seg-group .chip.seg + .chip.seg {
+  border-left: 1px solid var(--color-border);
+}
+
+.seg-group .chip.seg.selected {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  font-weight: bold;
+}

@@ -219,11 +219,12 @@ test('鍵がないと、鍵の画面以外は開かない（ロック）', async
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
 });
 
-test('鍵の入力ミスの表示（空欄・形式・使い方）と、失敗のあともロックのまま', async () => {
+test('鍵の入力ミスの表示（空欄・形式）と、失敗のあともロックのまま', async () => {
   const ui = makeUi(newServer());
   await enterToken(ui, { token: '' });
   assert.ok(ui.$('sync-err-token').textContent.includes('入力されていません'));
-  assert.ok(ui.$('sync-err-mode').textContent.includes('使い方'));
+  assert.ok(ui.$('sync-err-mode').hidden, '使い方は初期から「記録する」が選ばれている');
+  assert.ok(ui.$('sync-mode').children[0].classList.contains('selected'));
   assert.ok(!ui.$('sync-err-token').hidden);
 
   await enterToken(ui, { token: 'ghp_' + 'A'.repeat(50), mode: 'write' });
@@ -242,7 +243,7 @@ test('正しい鍵で TOP が開き、記録が送られ、状態行が「保存
   await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-top']);
   assert.strictEqual(ui.$('sync-token').value, '');
-  assert.ok(!ui.$('menu-record').hidden && !ui.$('menu-settings').hidden);
+  assert.ok(!ui.$('menu-record').hidden && ui.$('menu-settings').hidden, '管理機能は初期は出ない');
   assert.ok(ui.$('sync-line').textContent.includes('保存済み'));
 
   // 登録の直後に送られ、結果画面に送信状態が出る
@@ -299,6 +300,45 @@ test('使っている途中で鍵が無効になったら、鍵の画面に切�
   assert.strictEqual(server.files.size, 1);
 });
 
+test('管理機能は、機能利用設定の「利用する／利用しない」で出し入れできる。設定は端末に残り、最初の鍵の画面でも選べる', async () => {
+  const ui = makeUi(newServer());
+  // 最初の鍵の画面（ロック中）から選べる
+  assert.ok(!ui.$('sync-admin').hidden && ui.$('sync-admin').children.length === 2);
+  assert.ok(ui.$('sync-admin').children[1].classList.contains('selected'), '初期は「利用しない」');
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  assert.ok(!ui.$('menu-plan').hidden && !ui.$('menu-settings').hidden && !ui.$('admin-menu').hidden && !ui.$('admin-heading').hidden);
+  assert.ok(!ui.$('menu-record').hidden && !ui.$('menu-records').hidden && !ui.$('menu-review').hidden);
+
+  await ui.$('sync-line').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
+  assert.strictEqual(ui.$('sync-title').textContent, '機能利用設定');
+  assert.ok(ui.$('sync-admin').children[0].classList.contains('selected'));
+  await ui.$('sync-admin').children[1].click();
+  assert.ok(ui.$('sync-admin').children[1].classList.contains('selected'));
+  ui.ctx.goTo('screen-top');
+  assert.ok(ui.$('menu-plan').hidden && ui.$('menu-settings').hidden && ui.$('admin-menu').hidden && ui.$('admin-heading').hidden);
+  assert.strictEqual(JSON.stringify(ui.ctx.loadFeatures()), JSON.stringify({ admin: false }));
+});
+
+test('鍵は一度入れたら再入力不要。使い方は鍵なしですぐ変えられ、鍵を消すと鍵の欄が戻る', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  await ui.$('sync-line').click();
+  assert.ok(ui.$('sync-token-section').hidden && ui.$('btn-sync-connect').hidden && !ui.$('sync-manage').hidden);
+  await ui.$('sync-mode').children[1].click();
+  assert.strictEqual(ui.ctx.loadSyncConfig().mode, 'read');
+  assert.ok(ui.$('sync-mode').children[1].classList.contains('selected'));
+  ui.ctx.goTo('screen-top');
+  assert.ok(ui.$('menu-record').hidden, '見るだけに変わった');
+  await ui.$('sync-line').click();
+  await ui.$('sync-mode').children[0].click();
+  assert.strictEqual(ui.ctx.loadSyncConfig().mode, 'write');
+  assert.ok(ui.ctx.loadSyncConfig().token, '鍵は残っている');
+  await ui.$('btn-sync-disconnect').click();
+  assert.ok(!ui.$('sync-token-section').hidden && !ui.$('btn-sync-connect').hidden, '鍵を消すと鍵の欄が出る');
+});
+
 test('見るだけ：記録・設定のボタンが出ず、開けない。一覧は見え、修正・削除は出ない', async () => {
   const server = newServer();
   const date = new Date().toISOString().slice(0, 10);
@@ -313,8 +353,13 @@ test('見るだけ：記録・設定のボタンが出ず、開けない。一�
   const mother = makeUi(server);
   await enterToken(mother, { token: TOKEN_R, mode: 'read' });
   assert.deepStrictEqual(mother.visibleScreens(), ['screen-top']);
-  ['menu-record', 'menu-review', 'menu-plan', 'menu-settings'].forEach((id) => assert.ok(mother.$(id).hidden, id));
-  assert.ok(!mother.$('menu-records').hidden && !mother.$('menu-sync').hidden);
+  ['menu-record', 'menu-review'].forEach((id) => assert.ok(mother.$(id).hidden, id));
+  assert.ok(!mother.$('menu-records').hidden);
+  assert.ok(mother.$('admin-menu').hidden, '管理機能は初期は出ない');
+  await mother.$('sync-line').click();
+  await mother.$('sync-admin').children[0].click();
+  mother.ctx.goTo('screen-top');
+  assert.ok(!mother.$('menu-plan').hidden && !mother.$('menu-settings').hidden, '見るだけでも、利用するにすれば出る');
   assert.ok(mother.$('sync-line').textContent.includes('最新の記録を取り込みました'));
 
   await mother.$('menu-record').click();
@@ -348,7 +393,7 @@ test('記録する端末：一覧の説明・修正・削除が出る。鍵を�
   ui.state.offline = true;
   ui.ctx.saveRecord(sampleRecord({ id: d.replace(/-/g, '') + '-200000-a3f9', date: d }));
   ui.ctx.goTo('screen-top');
-  await ui.$('menu-sync').click();
+  await ui.$('sync-line').click();
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
   assert.ok(!ui.$('sync-manage').hidden);
   await ui.$('btn-sync-disconnect').click();
@@ -360,7 +405,7 @@ test('記録する端末：一覧の説明・修正・削除が出る。鍵を�
   const again = makeUi(newServer());
   again.state.confirmAnswer = false;
   await enterToken(again, { token: TOKEN_W, mode: 'write' });
-  await again.$('menu-sync').click();
+  await again.$('sync-line').click();
   await again.$('btn-sync-disconnect').click();
   assert.deepStrictEqual(again.visibleScreens(), ['screen-sync']);
   assert.ok(again.ctx.loadSyncConfig(), 'キャンセルしたら消さない');
