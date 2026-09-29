@@ -648,6 +648,19 @@ h2 {
 }
 
 /* 1行に収める数値チップ（量・時間の配分） */
+.chips-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.chips-grid .chip {
+  min-width: 0;
+  padding: 12px 0;
+  text-align: center;
+}
+
 .chips-oneline {
   display: flex;
   flex-wrap: nowrap;

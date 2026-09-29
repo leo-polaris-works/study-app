@@ -334,7 +334,7 @@ function renderWhenStep(body) {
   body.appendChild(bandChips);
 
   body.appendChild(el('div', 'field-label', '合計時間'));
-  const durChips = el('div', 'chips');
+  const durChips = el('div', 'chips-grid'); // 6個ずつ2段
   getActiveMaster('duration').forEach((d) => {
     durChips.appendChild(
       makeChip(d.label, form.durationId === d.id, () => {
@@ -401,7 +401,11 @@ function renderFieldsStep(body) {
   const nextBtn = el('button', 'btn btn-primary btn-big', '次へ');
   nextBtn.addEventListener('click', advance);
 
-  const timeChipValues = getActiveMaster('duration').map((d) => d.minutes);
+  // 項目ごとの時間チップ：合計以下の選択肢のうち小さいほうから6個（1行に収める。大きい時間は「残り」）
+  const timeChipValues = getActiveMaster('duration')
+    .map((d) => d.minutes)
+    .filter((v) => v <= total)
+    .slice(0, 6);
   const refreshers = [];
   const refreshAll = () => {
     const remaining = total - allocSum();
