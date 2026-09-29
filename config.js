@@ -139,10 +139,16 @@ const DEFAULT_MASTERS = {
   duration: [
     { id: 'd-10', label: '10分', minutes: 10, active: true },
     { id: 'd-15', label: '15分', minutes: 15, active: true },
+    { id: 'd-20', label: '20分', minutes: 20, active: true },
     { id: 'd-25', label: '25分', minutes: 25, active: true },
+    { id: 'd-30', label: '30分', minutes: 30, active: true },
+    { id: 'd-35', label: '35分', minutes: 35, active: true },
+    { id: 'd-40', label: '40分', minutes: 40, active: true },
+    { id: 'd-45', label: '45分', minutes: 45, active: true },
     { id: 'd-50', label: '50分', minutes: 50, active: true },
+    { id: 'd-55', label: '55分', minutes: 55, active: true },
     { id: 'd-60', label: '60分', minutes: 60, active: true },
-    { id: 'd-90', label: '90分', minutes: 90, active: true },
+    { id: 'd-90', label: '90分', minutes: 90, active: false },
   ],
 
   issue: [
