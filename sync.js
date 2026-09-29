@@ -139,6 +139,16 @@ async function connectWithToken(input) {
   return { ok: true };
 }
 
+// 使い方（記録する／見るだけ）だけを変える。鍵は入れ直さない
+function setSyncMode(mode) {
+  const cfg = loadSyncConfig();
+  if (!cfg || (mode !== 'write' && mode !== 'read')) return false;
+  cfg.mode = mode;
+  saveSyncConfig(cfg);
+  notifySync();
+  return true;
+}
+
 // 鍵を消す。送信済みの記録の控えも消す（GitHub 側には残る）。送信待ちの記録は端末に残す
 function disconnectSync() {
   localStorage.removeItem(SYNC_CONFIG_KEY);

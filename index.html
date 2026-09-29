@@ -27,15 +27,14 @@
 
   <div class="menu">
     <button class="btn btn-primary btn-big" id="menu-record">学習記録</button>
+    <button class="btn btn-menu" id="menu-records">学習記録を見る・直す</button>
     <button class="btn btn-menu" id="menu-review">振り返り</button>
-    <button class="btn btn-menu" id="menu-records">記録を見る・直す</button>
   </div>
 
-  <h3 class="menu-heading">管理用</h3>
-  <div class="menu">
+  <h3 class="menu-heading" id="admin-heading" hidden>管理用</h3>
+  <div class="menu" id="admin-menu" hidden>
     <button class="btn btn-menu" id="menu-plan">学習計画</button>
     <button class="btn btn-menu" id="menu-settings">学習記録設定</button>
-    <button class="btn btn-menu" id="menu-sync">保存の設定（鍵）</button>
   </div>
 
   <div class="dev-tools" id="dev-tools" hidden>
@@ -94,21 +93,31 @@
   <div id="settings-body"></div>
 </section>
 
-<!-- 保存の設定（鍵）。鍵が使えない間は、この画面だけが開く（ロック） -->
+<!-- 機能利用設定・鍵。鍵が使えない間は、この画面だけが開く（ロック） -->
 <section id="screen-sync" class="screen" hidden>
   <button class="btn btn-back" id="btn-sync-back">← TOPへ</button>
-  <h2 id="sync-title">保存の設定（鍵）</h2>
+  <h2 id="sync-title">機能利用設定</h2>
   <p class="lock-message" id="sync-lock-message" hidden></p>
   <div class="sync-status" id="sync-status"></div>
 
   <div id="sync-form">
-    <label class="field-label" for="sync-token">鍵</label>
-    <input class="sync-input" id="sync-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…" />
-    <div class="field-warn" id="sync-err-token" hidden></div>
+    <div class="sync-section" id="sync-token-section">
+      <h3 class="sync-heading">鍵</h3>
+      <input class="sync-input" id="sync-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…" aria-label="鍵" />
+      <div class="field-warn" id="sync-err-token" hidden></div>
+    </div>
 
-    <div class="field-label">この端末の使い方</div>
-    <div class="chips chips-big" id="sync-mode"></div>
-    <div class="field-warn" id="sync-err-mode" hidden></div>
+    <div class="sync-section">
+      <h3 class="sync-heading">この端末の使い方</h3>
+      <div class="seg-group" id="sync-mode"></div>
+      <div class="field-warn" id="sync-err-mode" hidden></div>
+    </div>
+
+    <div class="sync-section">
+      <h3 class="sync-heading">管理機能</h3>
+      <div class="sync-help">学習計画・学習記録設定を、この端末で使うか。選ぶとすぐ反映されます</div>
+      <div class="seg-group" id="sync-admin"></div>
+    </div>
 
     <div class="field-warn" id="sync-err-connect" hidden></div>
     <button class="btn btn-primary btn-big" id="btn-sync-connect">つないで確認する</button>

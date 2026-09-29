@@ -41,17 +41,36 @@ function goTo(id) {
   showScreen(id);
 }
 
+// --- 機能利用設定（管理用の機能を使うか。端末ごと） ---
+const FEATURES_KEY = 'study_features_v1';
+
+function loadFeatures() {
+  const f = readJson(FEATURES_KEY, {});
+  return { admin: f.admin === true }; // 初期は「利用しない」
+}
+
+function saveFeature(name, on) {
+  localStorage.setItem(FEATURES_KEY, JSON.stringify(Object.assign(loadFeatures(), { [name]: !!on })));
+}
+
 // --- TOP ---
 function isReadOnly() {
   return getSyncSummary().mode === 'read';
 }
 
 function renderTop() {
-  // 「見るだけ」の端末では、記録・設定のボタンを出さない
+  // 「見るだけ」の端末では、学習記録・振り返りのボタンを出さない
   const writable = !isReadOnly();
-  ['menu-record', 'menu-review', 'menu-plan', 'menu-settings'].forEach((id) => {
+  ['menu-record', 'menu-review'].forEach((id) => {
     $(id).hidden = !writable;
   });
+  // 管理用（学習計画・学習記録設定）は、機能利用設定で「利用する」にした端末だけ出す
+  const features = loadFeatures();
+  $('menu-plan').hidden = !features.admin;
+  $('menu-settings').hidden = !features.admin;
+  const anyAdmin = !$('menu-plan').hidden || !$('menu-settings').hidden;
+  $('admin-heading').hidden = !anyAdmin;
+  $('admin-menu').hidden = !anyAdmin;
   renderSyncLine();
 
   const s = weekSummary();
@@ -1108,7 +1127,7 @@ $('sync-line').addEventListener('click', () => {
   showScreen('screen-sync');
 });
 
-// --- 保存の設定（鍵）。鍵が使えない間は、アプリ全体の代わりにこの画面だけが出る ---
+// --- 機能利用設定・鍵。鍵が使えない間は、アプリ全体の代わりにこの画面だけが出る ---
 let syncModeChoice = null;
 
 function setFieldError(id, message) {
@@ -1121,26 +1140,55 @@ function clearSyncErrors() {
   ['sync-err-token', 'sync-err-mode', 'sync-err-connect'].forEach((id) => setFieldError(id, ''));
 }
 
-function renderSyncModeChips() {
-  const box = $('sync-mode');
+// 二択のスイッチ（ラジオボタンのグループ）
+function renderSegmented(box, options, current, onChange) {
   box.innerHTML = '';
-  [
-    ['write', '記録する'],
-    ['read', '見るだけ'],
-  ].forEach(([value, label]) => {
-    box.appendChild(
-      makeChip(label, syncModeChoice === value, () => {
-        syncModeChoice = value;
-        renderSyncModeChips();
-      })
-    );
+  options.forEach(([value, label]) => {
+    box.appendChild(makeChip(label, current === value, () => onChange(value), 'seg'));
   });
+}
+
+// 鍵が入っていて使えるときは、選ぶとすぐ反映する（鍵は入れ直さない）
+function renderSyncModeChips() {
+  const s = getSyncSummary();
+  const live = s.configured && !s.locked;
+  renderSegmented(
+    $('sync-mode'),
+    [
+      ['write', '記録する'],
+      ['read', '見るだけ'],
+    ],
+    live ? s.mode : syncModeChoice,
+    (value) => {
+      if (live) {
+        setSyncMode(value);
+        return;
+      }
+      syncModeChoice = value;
+      renderSyncModeChips();
+    }
+  );
+}
+
+function renderAdminChoice() {
+  renderSegmented(
+    $('sync-admin'),
+    [
+      [true, '利用する'],
+      [false, '利用しない'],
+    ],
+    loadFeatures().admin,
+    (value) => {
+      saveFeature('admin', value);
+      renderAdminChoice();
+    }
+  );
 }
 
 function renderSyncScreen() {
   const s = getSyncSummary();
   $('btn-sync-back').hidden = s.locked;
-  $('sync-title').textContent = s.locked ? '鍵を入れてください' : '保存の設定（鍵）';
+  $('sync-title').textContent = s.locked ? '鍵を入れてください' : '機能利用設定';
   const lockBox = $('sync-lock-message');
   lockBox.hidden = !s.locked;
   lockBox.textContent = s.locked ? lockMessage(s.lockReason) : '';
@@ -1154,16 +1202,16 @@ function renderSyncScreen() {
     if (s.error) status.appendChild(el('div', 'field-warn', s.error.message));
   }
 
-  if (syncModeChoice === null) syncModeChoice = s.mode;
+  if (syncModeChoice === null) syncModeChoice = s.mode || 'write'; // 初期は「記録する」
   renderSyncModeChips();
-  $('btn-sync-connect').textContent = s.configured && !s.locked ? '鍵を入れ直す' : 'つないで確認する';
-  $('sync-manage').hidden = !s.configured || s.locked;
+  renderAdminChoice();
+  // 鍵が入っていて使えるときは、鍵の欄と確認ボタンを出さない（鍵を消すまで再入力不要）
+  const live = s.configured && !s.locked;
+  $('sync-token-section').hidden = live;
+  $('btn-sync-connect').hidden = live;
+  $('sync-manage').hidden = !live;
 }
 
-$('menu-sync').addEventListener('click', () => {
-  renderSyncScreen();
-  showScreen('screen-sync');
-});
 $('btn-sync-back').addEventListener('click', () => goTo('screen-top'));
 
 $('btn-sync-connect').addEventListener('click', async () => {
@@ -1198,12 +1246,14 @@ $('btn-sync-disconnect').addEventListener('click', () => {
   if (!confirm(`鍵を消しますか？\nこの端末に保存している送信済みの記録の控えも消えます（保存先には残ります）。${note}`)) return;
   disconnectSync();
   syncModeChoice = null;
+  renderSyncScreen();
   showScreen('screen-sync');
 });
 
 // 同期の状態が変わったとき、開いている画面を更新する（入力中の画面は触らない）
 function handleSyncChange() {
   if (getLockState().locked) {
+    renderSyncScreen();
     showScreen('screen-sync');
     return;
   }
