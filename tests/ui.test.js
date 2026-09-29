@@ -188,9 +188,8 @@ function newServer() {
 }
 
 // 鍵の画面に入力して「つないで確認する」を押す
-async function enterToken(ui, { token, expiresOn, mode }) {
+async function enterToken(ui, { token, mode }) {
   ui.$('sync-token').value = token;
-  ui.$('sync-expires').value = expiresOn;
   if (mode) ui.$('sync-mode').children[mode === 'write' ? 0 : 1].click();
   await ui.$('btn-sync-connect').click();
   await ui.settle();
@@ -220,20 +219,19 @@ test('鍵がないと、鍵の画面以外は開かない（ロック）', async
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
 });
 
-test('鍵の入力ミスの表示（空欄・形式・期限・使い方）と、失敗のあともロックのまま', async () => {
+test('鍵の入力ミスの表示（空欄・形式・使い方）と、失敗のあともロックのまま', async () => {
   const ui = makeUi(newServer());
-  await enterToken(ui, { token: '', expiresOn: '' });
+  await enterToken(ui, { token: '' });
   assert.ok(ui.$('sync-err-token').textContent.includes('入力されていません'));
-  assert.ok(ui.$('sync-err-expires').textContent.includes('日付'));
   assert.ok(ui.$('sync-err-mode').textContent.includes('使い方'));
   assert.ok(!ui.$('sync-err-token').hidden);
 
-  await enterToken(ui, { token: 'ghp_' + 'A'.repeat(50), expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: 'ghp_' + 'A'.repeat(50), mode: 'write' });
   assert.ok(ui.$('sync-err-token').textContent.includes('この形の鍵は使えません'));
-  assert.ok(ui.$('sync-err-expires').hidden && ui.$('sync-err-mode').hidden, '直したところのエラーは消える');
+  assert.ok(ui.$('sync-err-mode').hidden, '直したところのエラーは消える');
 
-  await enterToken(ui, { token: 'github_pat_' + 'Z'.repeat(60), expiresOn: FAR, mode: 'write' });
-  assert.ok(ui.$('sync-err-connect').textContent.includes('正しくない'));
+  await enterToken(ui, { token: 'github_pat_' + 'Z'.repeat(60), mode: 'write' });
+  assert.ok(ui.$('sync-err-connect').textContent.includes('鍵が使えませんでした'));
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
   assert.strictEqual(ui.ctx.loadSyncConfig(), null);
 });
@@ -241,7 +239,7 @@ test('鍵の入力ミスの表示（空欄・形式・期限・使い方）と�
 test('正しい鍵で TOP が開き、記録が送られ、状態行が「保存済み」になる。鍵の入力欄は空に戻る', async () => {
   const server = newServer();
   const ui = makeUi(server);
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-top']);
   assert.strictEqual(ui.$('sync-token').value, '');
   assert.ok(!ui.$('menu-record').hidden && !ui.$('menu-settings').hidden);
@@ -261,7 +259,7 @@ test('正しい鍵で TOP が開き、記録が送られ、状態行が「保存
 
 test('通信できないとき：TOP の状態行は「未送信」、登録結果は「端末に保存しました」。ロックはしない', async () => {
   const ui = makeUi(newServer());
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   ui.state.offline = true;
   const date = ui.ctx.run('formatDate(new Date())');
   const r = sampleRecord({ id: date.replace(/-/g, '') + '-193045-a3f9', date });
@@ -285,49 +283,27 @@ test('通信できないとき：TOP の状態行は「未送信」、登録結�
 test('使っている途中で鍵が無効になったら、鍵の画面に切り替わる（記録は端末に残る）', async () => {
   const server = newServer();
   const ui = makeUi(server);
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   const date = ui.ctx.run('formatDate(new Date())');
   ui.ctx.saveRecord(sampleRecord({ id: date.replace(/-/g, '') + '-193045-a3f9', date }));
   server.revokeToken(TOKEN_W);
   ui.ctx.kickSync();
   await ui.settle();
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
-  assert.ok(ui.$('sync-lock-message').textContent.includes('鍵が使えません'));
+  assert.ok(ui.$('sync-lock-message').textContent.includes('鍵が使えなくなりました'));
   assert.strictEqual(ui.ctx.pendingIds().length, 1);
 
-  await enterToken(ui, { token: TOKEN_W2, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W2, mode: 'write' });
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-top']);
   assert.strictEqual(ui.ctx.pendingIds().length, 0);
   assert.strictEqual(server.files.size, 1);
-});
-
-test('画面を開いている間に鍵の期限が過ぎたら、戻ってきたときにロックされる', async () => {
-  const ui = makeUi(newServer());
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
-  const cfg = ui.ctx.loadSyncConfig();
-  cfg.expiresOn = '2020-01-01';
-  ui.ctx.localStorage.setItem('study_sync_v1', JSON.stringify(cfg));
-  await ui.fire('doc', 'visibilitychange');
-  assert.deepStrictEqual(ui.visibleScreens(), ['screen-sync']);
-  assert.ok(ui.$('sync-lock-message').textContent.includes('期限が切れています'));
-});
-
-test('鍵の期限が近いと、TOP に「あと○日」が出る', async () => {
-  const ui = makeUi(newServer());
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
-  const soon = ui.ctx.run('shiftDate(formatDate(new Date()), 5)');
-  const cfg = ui.ctx.loadSyncConfig();
-  cfg.expiresOn = soon;
-  ui.ctx.localStorage.setItem('study_sync_v1', JSON.stringify(cfg));
-  ui.ctx.goTo('screen-top');
-  assert.ok(ui.$('sync-line').textContent.includes('鍵の期限まであと5日'));
 });
 
 test('見るだけ：記録・設定のボタンが出ず、開けない。一覧は見え、修正・削除は出ない', async () => {
   const server = newServer();
   const date = new Date().toISOString().slice(0, 10);
   const owner = makeUi(server);
-  await enterToken(owner, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(owner, { token: TOKEN_W, mode: 'write' });
   const d = owner.ctx.run('formatDate(new Date())');
   owner.ctx.saveRecord(sampleRecord({ id: d.replace(/-/g, '') + '-193045-a3f9', date: d }));
   owner.ctx.kickSync();
@@ -335,7 +311,7 @@ test('見るだけ：記録・設定のボタンが出ず、開けない。一�
   assert.ok(date);
 
   const mother = makeUi(server);
-  await enterToken(mother, { token: TOKEN_R, expiresOn: FAR, mode: 'read' });
+  await enterToken(mother, { token: TOKEN_R, mode: 'read' });
   assert.deepStrictEqual(mother.visibleScreens(), ['screen-top']);
   ['menu-record', 'menu-review', 'menu-plan', 'menu-settings'].forEach((id) => assert.ok(mother.$(id).hidden, id));
   assert.ok(!mother.$('menu-records').hidden && !mother.$('menu-sync').hidden);
@@ -359,7 +335,7 @@ test('見るだけ：記録・設定のボタンが出ず、開けない。一�
 
 test('記録する端末：一覧の説明・修正・削除が出る。鍵を消すと鍵の画面になり、確認メッセージに送信待ち件数が出る', async () => {
   const ui = makeUi(newServer());
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   const d = ui.ctx.run('formatDate(new Date())');
   ui.ctx.saveRecord(sampleRecord({ id: d.replace(/-/g, '') + '-193045-a3f9', date: d }));
   ui.ctx.kickSync();
@@ -383,7 +359,7 @@ test('記録する端末：一覧の説明・修正・削除が出る。鍵を�
 
   const again = makeUi(newServer());
   again.state.confirmAnswer = false;
-  await enterToken(again, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(again, { token: TOKEN_W, mode: 'write' });
   await again.$('menu-sync').click();
   await again.$('btn-sync-disconnect').click();
   assert.deepStrictEqual(again.visibleScreens(), ['screen-sync']);
@@ -404,7 +380,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 test('入力の全ページ（いつ→やったこと・教科→学習内容→量→正答率→課題→確認）を通して登録され、送信される', async () => {
   const server = newServer();
   const ui = makeUi(server);
-  await enterToken(ui, { token: TOKEN_W, expiresOn: FAR, mode: 'write' });
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   const body = ui.$('step-body');
   await ui.$('menu-record').click();
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-input']);

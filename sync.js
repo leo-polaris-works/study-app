@@ -5,7 +5,6 @@ const SYNC_CONFIG_KEY = 'study_sync_v1';
 const SYNC_STATE_KEY = 'study_sync_state_v1';
 const PULL_WINDOW_DAYS = 28; // 他の端末の記録を取り込む範囲（作成日から）
 const PULL_INTERVAL_MS = 60 * 1000; // 取り込みの間隔（手動・登録直後を除く）
-const EXPIRY_WARN_DAYS = 14;
 const PUT_RETRY_MAX = 3;
 const FETCH_PARALLEL = 4;
 const RECORD_FILE_PATTERN = /^(\d{8})-\d{6}-[a-z0-9]+\.json$/;
@@ -21,7 +20,6 @@ function loadSyncConfig() {
     repo: c.repo || SYNC_DEFAULTS.repo,
     token: c.token,
     mode: c.mode === 'read' ? 'read' : 'write',
-    expiresOn: c.expiresOn || null,
     authFailed: !!c.authFailed,
   };
 }
@@ -34,43 +32,27 @@ function persistSyncState(patch) {
   localStorage.setItem(SYNC_STATE_KEY, JSON.stringify(Object.assign(readJson(SYNC_STATE_KEY, {}), patch)));
 }
 
-function daysBetween(fromStr, toStr) {
-  return Math.round((parseDate(toStr) - parseDate(fromStr)) / 86400000);
-}
-
 // 鍵がなければ、または使えなければロック（鍵の画面以外は開かない）。通信できないだけならロックしない
-function getLockState(today = formatDate(new Date())) {
+function getLockState() {
   const cfg = loadSyncConfig();
   if (!cfg) return { locked: true, reason: 'nokey' };
   if (cfg.authFailed) return { locked: true, reason: 'auth' };
-  if (cfg.expiresOn && today > cfg.expiresOn) return { locked: true, reason: 'expired' };
   return { locked: false, reason: null };
 }
 
 function lockMessage(reason) {
-  if (reason === 'auth') return '鍵が使えません（正しくないか、期限切れ・無効になっています）。お父さんに新しい鍵を入れてもらってください';
-  if (reason === 'expired') return '鍵の期限が切れています。お父さんに新しい鍵を入れてもらってください';
+  if (reason === 'auth') return '鍵が使えなくなりました（有効期限が切れたか、無効にされた可能性があります）。これまでの記録は端末に残っていて、新しい鍵を入れると送られます。お父さんに新しい鍵を入れてもらってください';
   return 'はじめに、鍵を入れてください';
 }
 
-// 鍵の期限まで何日か（設定なしは null）
-function expiryDaysLeft(today = formatDate(new Date())) {
-  const cfg = loadSyncConfig();
-  return cfg && cfg.expiresOn ? daysBetween(today, cfg.expiresOn) : null;
-}
-
 // --- 鍵の入力チェック ---
-function validateTokenInput(input, today = formatDate(new Date())) {
+function validateTokenInput(input) {
   const errors = {};
   const token = String(input.token || '').trim();
   if (!token) errors.token = '鍵が入力されていません';
   else if (/[^\x21-\x7e]/.test(token)) errors.token = '鍵に使えない文字（空白・全角など）が入っています。コピーし直してください';
   else if (!token.startsWith('github_pat_')) errors.token = 'この形の鍵は使えません（github_pat_ で始まる fine-grained の鍵を使ってください）';
   else if (token.length < 40) errors.token = '鍵が短すぎます。最後までコピーできていますか';
-
-  const exp = String(input.expiresOn || '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(exp) || formatDate(parseDate(exp)) !== exp) errors.expiresOn = '鍵の有効期限の日付を入れてください';
-  else if (exp < today) errors.expiresOn = '有効期限が過ぎています。新しい鍵を作ってください';
 
   if (input.mode !== 'write' && input.mode !== 'read') errors.mode = 'この端末の使い方を選んでください';
   return { ok: Object.keys(errors).length === 0, errors, token };
@@ -79,7 +61,7 @@ function validateTokenInput(input, today = formatDate(new Date())) {
 function syncErrorMessage(kind, mode, context) {
   switch (kind) {
     case 'auth':
-      return '鍵が正しくないか、期限が切れています。お父さんに新しい鍵を入れてもらってください';
+      return '鍵が使えませんでした。入力の間違い、有効期限切れ、または無効にされた可能性があります。お父さんに新しい鍵を入れてもらってください';
     case 'forbidden':
       return mode === 'read' ? '鍵の権限が足りません（読み取りの権限が必要です）' : 'この鍵には書き込みの権限がありません（「見るだけ」の鍵では記録できません）';
     case 'ratelimit':
@@ -116,10 +98,9 @@ function notifySync() {
   });
 }
 
-function getSyncSummary(today = formatDate(new Date())) {
+function getSyncSummary() {
   const cfg = loadSyncConfig();
-  const lock = getLockState(today);
-  const daysLeft = expiryDaysLeft(today);
+  const lock = getLockState();
   return {
     configured: !!cfg,
     locked: lock.locked,
@@ -130,9 +111,6 @@ function getSyncSummary(today = formatDate(new Date())) {
     error: syncState.error,
     notice: syncState.notice,
     lastSyncAt: readJson(SYNC_STATE_KEY, {}).lastSyncAt || null,
-    expiresOn: cfg ? cfg.expiresOn : null,
-    expiryDaysLeft: daysLeft,
-    expiryWarn: daysLeft !== null && daysLeft >= 0 && daysLeft <= EXPIRY_WARN_DAYS,
   };
 }
 
@@ -145,7 +123,6 @@ async function connectWithToken(input) {
     repo: SYNC_DEFAULTS.repo,
     token: v.token,
     mode: input.mode,
-    expiresOn: input.expiresOn,
     authFailed: false,
   };
   try {
