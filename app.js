@@ -38,6 +38,7 @@ document.querySelectorAll('[data-goto]').forEach((btn) => {
 
 function goTo(id) {
   if (id === 'screen-top') renderTop();
+  if (id === 'screen-plans') renderPlansList();
   showScreen(id);
 }
 
@@ -103,7 +104,7 @@ function openPlaceholder(title) {
   showScreen('screen-placeholder');
 }
 $('menu-review').addEventListener('click', () => openPlaceholder('振り返り'));
-$('menu-plan').addEventListener('click', () => openPlaceholder('学習計画'));
+$('menu-plan').addEventListener('click', () => openPlans());
 
 $('menu-settings').addEventListener('click', () => {
   settingsTab = settingsTab || 'field';
@@ -1264,6 +1265,8 @@ function handleSyncChange() {
   renderSyncLine();
   if (currentScreen === 'screen-top') renderTop();
   else if (currentScreen === 'screen-records') renderRecordsList();
+  else if (currentScreen === 'screen-plans') renderPlansList();
+  else if (currentScreen === 'screen-plan-result') renderPlanResult();
   else if (currentScreen === 'screen-sync') renderSyncScreen();
   else if (currentScreen === 'screen-done') renderDoneSync();
 }

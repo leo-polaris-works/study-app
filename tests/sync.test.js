@@ -383,15 +383,15 @@ test('2台：Aの登録がBの一覧に出る／Bの修正がAに反映される
   assert.strictEqual(b.ctx.findRecord(r.id).deleted, true);
 });
 
-test('取り込みの範囲：28日より前の作成分は取りにいかない。変わっていないファイルは再取得しない', async () => {
+test('取り込みの範囲：63日より前の作成分は取りにいかない。変わっていないファイルは再取得しない', async () => {
   const server = newWorld();
   const a = makeDevice(server, 'iPad');
   const b = makeDevice(server, 'Android');
   await connect(a, TOKEN_W);
   await connect(b, TOKEN_W2);
   const recent = daysAgo(a, 10);
-  const edge = daysAgo(a, 27);
-  const old = daysAgo(a, 40);
+  const edge = daysAgo(a, 62);
+  const old = daysAgo(a, 70);
   [recent, edge, old].forEach((d, i) => {
     const r = sampleRecord({ id: idFor(d, 'q' + i + 'zz'), date: d });
     server.putFile(`records/${d.slice(0, 7)}/${r.id}.json`, JSON.stringify(r, null, 2) + '\n');
@@ -541,6 +541,106 @@ test('app/ の公開ファイルに、鍵・氏名・学校名らしき文字列
     assert.ok(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(text), f + ' に鍵らしき文字列');
     assert.ok(!/(中学校|小学校|高校)/.test(text), f + ' に学校名らしき語');
   });
+});
+
+// --- 学習計画 ---
+function makePlan(dev, o) {
+  const p = plain(dev.ctx.newPlan());
+  p.name = o.name || '後期中間';
+  p.testDate = o.testDate || '2099-11-20';
+  p.items = o.items || [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3 }];
+  return p;
+}
+
+test('計画：plans/<id>.json に保存され、別の端末に取り込まれる。修正・削除も届く', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const p = makePlan(a, {});
+  a.ctx.savePlan(p);
+  eq(a.ctx.getSyncSummary().pending, 1);
+  await a.ctx.syncNow({ force: true });
+  const path = `plans/${p.id}.json`;
+  assert.ok(server.files.has(path), '計画のファイルができる');
+  eq(JSON.parse(server.files.get(path).text).items[0].amount, 40);
+  eq(a.ctx.pendingPlanIds(), []);
+
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.loadActivePlans().map((x) => x.id), [p.id]);
+
+  const edited = plain(b.ctx.findPlan(p.id));
+  edited.items[0].amount = 50;
+  edited.updatedAt = '2099-01-01T00:00:00+09:00';
+  b.ctx.putPlan(edited);
+  b.ctx.markPlanPending(edited);
+  await b.ctx.syncNow({ force: true });
+  await a.ctx.syncNow({ force: true });
+  eq(a.ctx.findPlan(p.id).items[0].amount, 50);
+
+  a.ctx.markPlanDeleted(p.id);
+  const del = plain(a.ctx.findPlan(p.id));
+  del.updatedAt = '2099-01-02T00:00:00+09:00';
+  a.ctx.putPlan(del);
+  await a.ctx.syncNow({ force: true });
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.loadActivePlans(), []);
+  assert.ok(server.files.has(path), '削除は印だけでファイルは残る');
+});
+
+test('計画：同じ計画を2台で直したら updatedAt が新しいほうが残る。形が違う計画は取り込まない', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const p = makePlan(a, {});
+  p.updatedAt = '2099-01-01T00:00:00+09:00';
+  a.ctx.putPlan(p);
+  a.ctx.markPlanPending(p);
+  await a.ctx.syncNow({ force: true });
+  await b.ctx.syncNow({ force: true });
+
+  const newer = plain(b.ctx.findPlan(p.id));
+  newer.name = '新しいほう';
+  newer.updatedAt = '2099-01-03T00:00:00+09:00';
+  b.ctx.putPlan(newer);
+  b.ctx.markPlanPending(newer);
+  await b.ctx.syncNow({ force: true });
+
+  const older = plain(a.ctx.findPlan(p.id));
+  older.name = '古いほう';
+  older.updatedAt = '2099-01-02T00:00:00+09:00';
+  a.ctx.putPlan(older);
+  a.ctx.markPlanPending(older);
+  const r = await a.ctx.syncNow({ force: true });
+  eq(a.ctx.findPlan(p.id).name, '新しいほう');
+  assert.ok(/そろえました/.test(r.notice));
+
+  const bad = makePlan(a, {});
+  bad.id = 'plan-20990101-000000-badx';
+  bad.week = [];
+  server.putFile(`plans/${bad.id}.json`, JSON.stringify(bad));
+  server.putFile('plans/README.md', 'x');
+  await b.ctx.syncNow({ force: true });
+  assert.ok(!b.ctx.findPlan(bad.id), '形が違う計画は取り込まない');
+});
+
+test('計画：鍵を消すと送信済みの計画の控えは消え、送信待ちの計画は残る', async () => {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  const sent = makePlan(dev, {});
+  dev.ctx.savePlan(sent);
+  await dev.ctx.syncNow({ force: true });
+  dev.offline = true;
+  const waiting = makePlan(dev, {});
+  waiting.id = 'plan-20990101-000000-wait';
+  dev.ctx.savePlan(waiting);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.disconnectSync();
+  eq(dev.ctx.loadPlans().map((x) => x.id), [waiting.id]);
 });
 
 (async () => {

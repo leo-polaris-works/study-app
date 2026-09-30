@@ -25,6 +25,10 @@ class El {
     this.style = {};
     this.listeners = {};
     this.classSet = new Set();
+    this.attrs = {};
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = String(v);
   }
   get className() {
     return [...this.classSet].join(' ');
@@ -147,6 +151,7 @@ function makeUi(server, extra) {
       },
       querySelectorAll: (sel) => (sel === '.screen' ? screens : sel === '[data-goto]' ? gotos : []),
       createElement: (tag) => new El(tag),
+      createElementNS: (ns, tag) => new El(tag),
       addEventListener: (t, fn) => (docListeners[t] = docListeners[t] || []).push(fn),
       visibilityState: 'visible',
     },
@@ -157,7 +162,7 @@ function makeUi(server, extra) {
   };
   context.window.document = context.document;
   const ctx = vm.createContext(context);
-  ['config.js', 'master.js', 'data.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js'].forEach((f) => {
+  ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(APP_DIR, f), 'utf8'), ctx, { filename: f });
   });
   ctx.run = (code) => vm.runInContext(code, ctx);
@@ -468,6 +473,86 @@ test('入力の全ページ（いつ→やったこと・教科→学習内容�
 test('実機テスト用のサンプルボタンは ?dev=1 のときだけ出る', () => {
   assert.ok(makeUi(newServer()).$('dev-tools').hidden);
   assert.ok(!makeUi(newServer(), { search: '?dev=1' }).$('dev-tools').hidden);
+});
+
+test('学習計画：作る→保存して計算→結果（目標・グラフ）が出て送信される。入力漏れは保存しない。直す・削除もできる', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  await ui.$('menu-plan').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plans']);
+  assert.ok(/まだ計画がありません/.test(ui.$('plans-list').textContent));
+
+  await ui.$('btn-plan-new').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-edit']);
+  const body = ui.$('plan-edit-body');
+  await ui.$('btn-plan-save').click();
+  assert.ok(!ui.$('plan-edit-error').hidden, '名前がないと保存しない');
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-edit']);
+
+  const inputs = findAll(body, (e) => e.classSet.has('plan-input'));
+  inputs[0].value = '後期中間';
+  inputs[0].listeners.change[0]();
+  const addButtons = findAll(body, (e) => e.textContent === '＋教材');
+  await addButtons[3].click(); // 理科
+  await ui.$('btn-plan-save').click();
+  assert.ok(/量が入っていない/.test(ui.$('plan-edit-error').textContent));
+  const amount = findAll(ui.$('plan-edit-body'), (e) => e.classSet.has('setting-number'))[0];
+  amount.value = '40';
+  amount.listeners.change[0]();
+  await ui.$('btn-plan-save').click();
+  await ui.settle();
+
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+  assert.strictEqual(ui.$('plan-result-title').textContent, '後期中間');
+  const text = ui.$('plan-result-body').textContent;
+  ['テストまで', 'テストまでの流れ', '今週の目標', '今日・明日の目安', '教材ごとの進み具合', '日ごとの予定', '計画と実績', '理科 宿題'].forEach((t) => assert.ok(text.includes(t), t));
+  assert.ok(findAll(ui.$('plan-result-body'), (e) => e.tagName === 'svg').length >= 2, 'グラフが描かれる');
+  const files = [...server.files.keys()].filter((k) => k.startsWith('plans/'));
+  assert.strictEqual(files.length, 1);
+  assert.strictEqual(JSON.parse(server.files.get(files[0]).text).items[0].amount, 40);
+
+  await ui.$('btn-plan-edit').click();
+  assert.strictEqual(ui.$('plan-edit-title').textContent, '計画を直す');
+  await ui.$('btn-plan-edit-back').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+
+  await ui.$('btn-plan-delete').click();
+  await ui.settle();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plans']);
+  assert.strictEqual(ui.ctx.loadActivePlans().length, 0);
+  assert.strictEqual(JSON.parse(server.files.get(files[0]).text).deleted, true);
+});
+
+test('学習計画の結果：遅れ・時間不足・予備日・使えない日があっても表示でき、候補と組み直しの説明が出る', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const today = ui.ctx.formatDate(new Date());
+  const p = JSON.parse(JSON.stringify(ui.ctx.newPlan()));
+  p.name = '範囲が多い';
+  p.startDate = ui.ctx.shiftDate(today, -10);
+  p.testDate = ui.ctx.shiftDate(today, 12);
+  p.exceptions = [{ date: ui.ctx.shiftDate(today, 2), minutes: 0 }];
+  p.items = [
+    { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 400, laps: 3 },
+    { materialId: 'm-en-word', subject: '英語', label: '単語', unit: '語', amount: 100, laps: 3 },
+  ];
+  ui.ctx.savePlan(p);
+  const r = sampleRecord({ id: today.replace(/-/g, '') + '-190000-zzzz', date: ui.ctx.shiftDate(today, -1) });
+  r.subject = '理科';
+  r.materials = [{ id: 'm-sc-work', label: 'ワーク', amount: { value: 3, unit: 'ページ' } }];
+  ui.ctx.saveRecord(r);
+  await ui.$('menu-plan').click();
+  await findAll(ui.$('plans-list'), (e) => e.classSet.has('record-item'))[0].click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+  const text = ui.$('plan-result-body').textContent;
+  assert.ok(/足りません/.test(text), '時間不足');
+  assert.ok(/周→2周にする|土日を30分ずつ|予備日も使う/.test(text), '候補');
+  assert.ok(/組み直しました/.test(text), '遅れの組み直し');
+  assert.ok(/やった量 3ページ|3 \/ /.test(text), '記録が進捗に入る');
 });
 
 (async () => {

@@ -111,7 +111,7 @@ class FakeGitHub {
   }
 }
 
-const SCRIPT_ORDER = ['config.js', 'master.js', 'data.js', 'github.js', 'sync.js'];
+const SCRIPT_ORDER = ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js'];
 
 // 端末1台ぶん。ctx.run(コード) で、スクリプト直下の const・let も読める
 function makeDevice(server, kind) {
