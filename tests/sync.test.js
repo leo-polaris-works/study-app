@@ -620,7 +620,7 @@ test('計画：同じ計画を2台で直したら updatedAt が新しいほう�
 
   const bad = makePlan(a, {});
   bad.id = 'plan-20990101-000000-badx';
-  bad.week = [];
+  bad.months = 'x';
   server.putFile(`plans/${bad.id}.json`, JSON.stringify(bad));
   server.putFile('plans/README.md', 'x');
   await b.ctx.syncNow({ force: true });

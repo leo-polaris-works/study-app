@@ -846,7 +846,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin: 8px 0;
   font-size: 14px;
 }
@@ -868,21 +868,13 @@ h2 {
   padding: 8px 0;
 }
 
-.plan-subject-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.plan-subject-name,
-.plan-day-name {
+.plan-subject-name {
   font-weight: bold;
   font-size: 14px;
 }
 
 .plan-item,
-.plan-slot {
+.lap-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -900,23 +892,14 @@ h2 {
   color: var(--color-muted);
 }
 
-.plan-day {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 6px;
-  border-top: 1px solid #eee;
-  padding: 6px 0;
-}
-
-.plan-day-name {
-  padding-top: 12px;
-}
-
-.plan-slot .chips-mini .chip {
-  min-width: 36px;
-  min-height: 34px;
-  padding: 4px 8px;
+.plan-sum {
   font-size: 14px;
+  font-weight: bold;
+  margin: 8px 0;
+}
+
+.plan-sum.warn {
+  color: var(--color-warn);
 }
 
 .plan-big {
@@ -947,7 +930,7 @@ h2 {
 }
 
 .plan-target {
-  margin: 10px 0;
+  margin: 12px 0;
 }
 
 .plan-target-main {
@@ -982,7 +965,6 @@ h2 {
 }
 
 .lap-seg {
-  position: relative;
   height: 100%;
   border-right: 1px solid #fff;
   background: #e6edf5;
@@ -1010,16 +992,8 @@ h2 {
   display: block;
 }
 
-.plan-svg .phase-1 {
-  fill: #2b6cb0;
-}
-
-.plan-svg .phase-2 {
-  fill: #5a8fc8;
-}
-
-.plan-svg .phase-3 {
-  fill: #8fb3dc;
+.plan-svg .month-band {
+  fill: var(--color-primary);
 }
 
 .plan-svg .phase-label {
@@ -1035,6 +1009,12 @@ h2 {
 .plan-svg .today-line {
   stroke: var(--color-text);
   stroke-width: 1.5;
+}
+
+.plan-svg .deadline-line {
+  stroke: var(--color-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
 }
 
 .plan-svg .axis {
@@ -1054,16 +1034,22 @@ h2 {
   stroke-width: 2.5;
 }
 
-.day-chart {
+.week-chart {
   display: flex;
-  gap: 3px;
+  gap: 4px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
-.day-col {
-  flex: 0 0 18px;
+.week-col {
+  flex: 1 0 40px;
   text-align: center;
+}
+
+.week-value {
+  font-size: 10px;
+  color: var(--color-muted);
+  white-space: nowrap;
 }
 
 .day-box {
@@ -1071,29 +1057,17 @@ h2 {
   height: 90px;
 }
 
-.day-cap,
 .day-used {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 4px;
+  right: 4px;
   bottom: 0;
   border-radius: 3px 3px 0 0;
+  background: #8fb3dc;
 }
 
-.day-cap {
-  background: #e6edf5;
-}
-
-.day-cap.is-rest {
-  background: repeating-linear-gradient(45deg, #eee, #eee 3px, #fff 3px, #fff 6px);
-}
-
-.day-used {
+.week-col.is-today .day-used {
   background: var(--color-primary);
-}
-
-.day-used.is-over {
-  background: #6b6b6b;
 }
 
 .day-label {
@@ -1102,7 +1076,7 @@ h2 {
   margin-top: 2px;
 }
 
-.day-col.is-today .day-label {
+.week-col.is-today .day-label {
   color: var(--color-text);
   font-weight: bold;
 }

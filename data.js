@@ -285,23 +285,19 @@ function applyRemotePlan(plan, path, sha) {
   setMeta(plan.id, { path, sha });
 }
 
-// 新しい計画。使える時間などは、前の計画があればそこから写す
+// 新しい計画。1周目の正答率の見込みは、前の計画があればそこから写す
 function newPlan(today = formatDate(new Date())) {
   const prev = loadActivePlans()[0];
   const now = localIso();
-  const week = prev ? prev.week : PLAN_DEFAULTS.week.map((m) => [{ minutes: m, subjects: [] }]);
+  const testDate = shiftDate(today, 28);
   return {
     schemaVersion: SCHEMA_VERSION,
     id: PLAN_PREFIX + makeRecordId(),
     name: '',
-    testDate: shiftDate(today, 28),
+    testDate,
     startDate: today,
     items: [],
-    focus: [],
-    week: JSON.parse(JSON.stringify(week)),
-    restDay: prev ? prev.restDay : PLAN_DEFAULTS.restDay,
-    exceptions: [],
-    margin: prev ? prev.margin : PLAN_DEFAULTS.margin,
+    months: defaultPlanMonths(today, testDate),
     firstAccuracy: prev ? prev.firstAccuracy : PLAN_DEFAULTS.firstAccuracy,
     device: getDevice(),
     createdAt: now,
@@ -315,15 +311,14 @@ function isValidPlan(p) {
   const isStr = (v) => typeof v === 'string';
   const isDate = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
   const isNum = (v) => typeof v === 'number' && isFinite(v);
+  const isMark = (m) => m && isNum(m.lap) && isDate(m.date) && (m.nextAmount === null || isNum(m.nextAmount));
+  const isItem = (it) =>
+    it && isStr(it.materialId) && SUBJECTS.includes(it.subject) && isStr(it.label) && isStr(it.unit) && isNum(it.amount) && isNum(it.laps) && (it.lapMarks === undefined || (Array.isArray(it.lapMarks) && it.lapMarks.every(isMark)));
   if (!p || typeof p !== 'object' || !isStr(p.id) || !p.id.startsWith(PLAN_PREFIX)) return false;
   if (!isNum(p.schemaVersion) || !isStr(p.name) || !isDate(p.testDate) || !isDate(p.startDate)) return false;
-  if (!Array.isArray(p.items) || !p.items.every((it) => it && isStr(it.materialId) && SUBJECTS.includes(it.subject) && isStr(it.label) && isStr(it.unit) && isNum(it.amount) && isNum(it.laps))) return false;
-  if (!Array.isArray(p.focus) || !p.focus.every((s) => SUBJECTS.includes(s))) return false;
-  if (!Array.isArray(p.week) || p.week.length !== 7) return false;
-  if (!p.week.every((slots) => Array.isArray(slots) && slots.every((s) => s && isNum(s.minutes) && Array.isArray(s.subjects) && s.subjects.every((x) => SUBJECTS.includes(x))))) return false;
-  if (p.restDay !== null && !(isNum(p.restDay) && p.restDay >= 0 && p.restDay <= 6)) return false;
-  if (!Array.isArray(p.exceptions) || !p.exceptions.every((e) => e && isDate(e.date) && isNum(e.minutes))) return false;
-  if (!isNum(p.margin) || !isNum(p.firstAccuracy)) return false;
+  if (!Array.isArray(p.items) || !p.items.every(isItem)) return false;
+  if (!Array.isArray(p.months) || !p.months.every((m) => m && isStr(m.month) && /^\d{4}-\d{2}$/.test(m.month) && isNum(m.percent))) return false;
+  if (!isNum(p.firstAccuracy)) return false;
   if (!isStr(p.createdAt) || !isStr(p.updatedAt) || typeof p.deleted !== 'boolean') return false;
   return true;
 }
