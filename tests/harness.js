@@ -114,8 +114,9 @@ class FakeGitHub {
 const SCRIPT_ORDER = ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js'];
 
 // 端末1台ぶん。ctx.run(コード) で、スクリプト直下の const・let も読める
-function makeDevice(server, kind) {
-  const store = new Map();
+// initialStore：スクリプトを読む前から端末に入っている保存データ（前の版で使っていた端末の再現）
+function makeDevice(server, kind, initialStore) {
+  const store = new Map(Object.entries(initialStore || {}));
   const localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
