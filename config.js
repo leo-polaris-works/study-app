@@ -19,6 +19,8 @@ const UNIT_PRESETS = {
 
 const ISSUE_GROUPS = ['わからなかった', 'やり方・復習', '体調・気持ち・時間'];
 const ISSUE_MAX = 3;
+const UNCLEAR_GROUP = 'わからなかった'; // この群の課題を選んだら「わからなかったところ」を書ける
+const UNCLEAR_MAX = 100;
 
 const ACCURACY_LEVELS = [
   { level: 1, label: '〜30%' },

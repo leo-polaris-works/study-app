@@ -44,11 +44,13 @@
   </div>
 </section>
 
-<!-- 準備中（振り返り） -->
-<section id="screen-placeholder" class="screen" hidden>
+<!-- 振り返り：わからなかったことノート -->
+<section id="screen-review" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
-  <h2 id="placeholder-title"></h2>
-  <p>準備中です。記録の項目が固まってから作ります。</p>
+  <h2>わからなかったことノート</h2>
+  <div class="field-note" id="review-summary"></div>
+  <div class="seg-group" id="review-filter"></div>
+  <div id="review-list"></div>
 </section>
 
 <!-- 学習計画：一覧 -->
@@ -165,5 +167,6 @@
 <script src="images.js"></script>
 <script src="app.js"></script>
 <script src="plan-ui.js"></script>
+<script src="review-ui.js"></script>
 </body>
 </html>
