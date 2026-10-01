@@ -137,7 +137,7 @@ function makeUi(server, extra) {
     setTimeout,
     clearTimeout,
     navigator: { userAgent: 'Android', maxTouchPoints: 5 },
-    location: { search: (extra && extra.search) || '' },
+    location: { search: (extra && extra.search) || '', hostname: (extra && extra.hostname) || 'leo-polaris-works.github.io' },
     alert: () => {},
     confirm: (msg) => {
       state.confirms.push(msg);
@@ -553,6 +553,50 @@ test('学習計画の結果：遅れ・時間不足・予備日・使えない�
   assert.ok(/周→2周にする|土日を30分ずつ|予備日も使う/.test(text), '候補');
   assert.ok(/組み直しました/.test(text), '遅れの組み直し');
   assert.ok(/やった量 3ページ|3 \/ /.test(text), '記録が進捗に入る');
+});
+
+test('テスト用（localhost）：鍵なしで開き、記録・計画は端末内だけに保存され、GitHub に1回も通信しない。公開ページではロックのまま', async () => {
+  assert.deepStrictEqual(makeUi(newServer()).visibleScreens(), ['screen-sync'], '公開ページでは鍵が必要');
+  const server = newServer();
+  const ui = makeUi(server, { hostname: 'localhost', search: '?dev=1' });
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-top']);
+  assert.ok(/テスト用/.test(ui.$('sync-line').textContent));
+  await ui.$('sync-line').click();
+  assert.ok(ui.$('sync-token-section').hidden && ui.$('btn-sync-connect').hidden && ui.$('sync-manage').hidden, '鍵の欄は出ない');
+  await ui.$('sync-admin').children[0].click();
+  ui.ctx.goTo('screen-top');
+
+  const body = ui.$('step-body');
+  await ui.$('menu-record').click();
+  await chipByText(body, '50分').click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, 'テスト対策').click();
+  await chipByText(body, '英語').click();
+  await wait(250);
+  await chipByText(body, '残り').click();
+  await buttonByText(body, '次へ').click();
+  await findAll(body, (e) => e.classSet.has('chip') && /^\d+$/.test(e.textContent))[0].click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, '〜70%').click();
+  await wait(250);
+  await chipByText(body, '特になし').click();
+  await wait(250);
+  await buttonByText(body, '登録する').click();
+  await ui.settle();
+  assert.ok(/送信しません/.test(ui.$('done-sync').textContent));
+
+  const p = JSON.parse(JSON.stringify(ui.ctx.newPlan()));
+  p.name = 'テスト';
+  p.items = [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3 }];
+  ui.ctx.savePlan(p);
+  await ui.ctx.syncNow({ force: true });
+  await ui.settle();
+  assert.strictEqual(ui.ctx.loadActiveRecords().length, 1);
+  assert.strictEqual(ui.ctx.loadActivePlans().length, 1);
+  assert.strictEqual(server.log.length, 0, 'GitHub に通信しない');
+  const r = await ui.ctx.connectWithToken({ token: TOKEN_W, mode: 'write' });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(server.log.length, 0, '鍵を入れても通信しない');
 });
 
 (async () => {

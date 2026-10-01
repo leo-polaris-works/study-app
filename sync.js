@@ -12,6 +12,9 @@ const PLAN_FILE_PATTERN = /^plan-\d{8}-\d{6}-[a-z0-9]+\.json$/;
 
 let syncSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// パソコンで開いたテスト用（localhost）。鍵なしで使え、どこにも送らない（公開ページではこうならない）
+const LOCAL_TEST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || '');
+
 // --- 鍵と接続先の設定（端末内） ---
 function loadSyncConfig() {
   const c = readJson(SYNC_CONFIG_KEY, null);
@@ -35,6 +38,7 @@ function persistSyncState(patch) {
 
 // 鍵がなければ、または使えなければロック（鍵の画面以外は開かない）。通信できないだけならロックしない
 function getLockState() {
+  if (LOCAL_TEST) return { locked: false, reason: null };
   const cfg = loadSyncConfig();
   if (!cfg) return { locked: true, reason: 'nokey' };
   if (cfg.authFailed) return { locked: true, reason: 'auth' };
@@ -104,6 +108,7 @@ function getSyncSummary() {
   const lock = getLockState();
   return {
     configured: !!cfg,
+    localTest: LOCAL_TEST,
     locked: lock.locked,
     lockReason: lock.reason,
     mode: cfg ? cfg.mode : null,
@@ -117,6 +122,7 @@ function getSyncSummary() {
 
 // --- 鍵を入れて確認する／消す ---
 async function connectWithToken(input) {
+  if (LOCAL_TEST) return { ok: false, message: 'テスト用（このパソコン）では鍵を使いません' };
   const v = validateTokenInput(input);
   if (!v.ok) return { ok: false, errors: v.errors };
   const cfg = {
@@ -356,6 +362,7 @@ function syncNow(opts) {
 }
 
 async function doSync(opts) {
+  if (LOCAL_TEST) return getSyncSummary();
   const cfg = loadSyncConfig();
   if (!cfg || getLockState().locked) return getSyncSummary();
 

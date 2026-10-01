@@ -1088,6 +1088,7 @@ function formatSyncTime(iso) {
 }
 
 function syncLineInfo(s) {
+  if (s.localTest) return { text: 'テスト用：このパソコンの中だけに保存（送信しません）', warn: true };
   if (s.locked) return { text: lockMessage(s.lockReason), warn: true };
   let text;
   let warn = false;
@@ -1118,7 +1119,8 @@ function renderSyncLine() {
 function renderDoneSync() {
   const s = getSyncSummary();
   let text = '送信しました ✓';
-  if (s.running) text = '送信中…';
+  if (s.localTest) text = 'テスト用：このパソコンの中だけに保存しました（送信しません）';
+  else if (s.running) text = '送信中…';
   else if (s.pending > 0) text = s.error ? `端末に保存しました。${s.error.message}` : '端末に保存しました。通信できたら自動で送ります';
   $('done-sync').textContent = text;
 }
@@ -1200,7 +1202,9 @@ function renderSyncScreen() {
 
   const status = $('sync-status');
   status.innerHTML = '';
-  if (s.configured && !s.locked) {
+  if (s.localTest) {
+    status.appendChild(el('div', null, 'テスト用（このパソコン）：鍵は使わず、どこにも送りません'));
+  } else if (s.configured && !s.locked) {
     status.appendChild(el('div', null, `この端末：${s.mode === 'read' ? '見るだけ' : '記録する'}`));
     if (s.mode !== 'read') status.appendChild(el('div', null, `送信待ち：${s.pending}件`));
     status.appendChild(el('div', null, s.lastSyncAt ? `最後の同期：${formatSyncTime(s.lastSyncAt)}` : 'まだ同期していません'));
@@ -1212,9 +1216,9 @@ function renderSyncScreen() {
   renderAdminChoice();
   // 鍵が入っていて使えるときは、鍵の欄と確認ボタンを出さない（鍵を消すまで再入力不要）
   const live = s.configured && !s.locked;
-  $('sync-token-section').hidden = live;
-  $('btn-sync-connect').hidden = live;
-  $('sync-manage').hidden = !live;
+  $('sync-token-section').hidden = live || s.localTest;
+  $('btn-sync-connect').hidden = live || s.localTest;
+  $('sync-manage').hidden = !live || s.localTest;
 }
 
 $('btn-sync-back').addEventListener('click', () => goTo('screen-top'));
