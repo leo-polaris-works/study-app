@@ -162,7 +162,7 @@ function makeUi(server, extra) {
   };
   context.window.document = context.document;
   const ctx = vm.createContext(context);
-  ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js'].forEach((f) => {
+  ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js', 'review-ui.js'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(APP_DIR, f), 'utf8'), ctx, { filename: f });
   });
   ctx.run = (code) => vm.runInContext(code, ctx);
@@ -619,6 +619,100 @@ test('テスト用（localhost）：鍵なしで開き、記録・計画は端�
   const r = await ui.ctx.connectWithToken({ token: TOKEN_W, mode: 'write' });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(server.log.length, 0, '鍵を入れても通信しない');
+});
+
+// 入力を課題のページまで進める（いつ→やったこと・教科→学習内容→量→正答率）
+async function inputUntilIssue(ui) {
+  const body = ui.$('step-body');
+  await ui.$('menu-record').click();
+  await chipByText(body, '50分').click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, 'テスト対策').click();
+  await chipByText(body, '理科').click();
+  await wait(250);
+  await chipByText(body, '残り').click();
+  await buttonByText(body, '次へ').click();
+  await findAll(body, (e) => e.classSet.has('chip') && /^\d+$/.test(e.textContent))[0].click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, '〜50%').click();
+  await wait(250);
+  return body;
+}
+
+test('わからなかったところ：「わからなかった」の課題を選んだときだけ入力欄が出て、書いた内容が記録・確認・ノートに出る。「わかった」と取り消しが送られ、直しても消えない', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const body = await inputUntilIssue(ui);
+  const box = () => findAll(body, (e) => e.classSet.has('unclear-box'))[0];
+  assert.ok(box().hidden, '最初は出ない');
+  await chipByText(body, '眠い・疲れた').click();
+  assert.ok(box().hidden, '「わからなかった」以外では出ない');
+  await chipByText(body, 'そもそも分からない').click();
+  assert.ok(!box().hidden, '「わからなかった」を選ぶと出る');
+  const input = findAll(body, (e) => e.classSet.has('unclear-input'))[0];
+  input.value = '  ワーク p.32 問3、化学反応式の係数  ';
+  input.listeners.input[0]();
+  await buttonByText(body, '次へ').click();
+  assert.ok(/わからなかったところ.*ワーク p\.32 問3、化学反応式の係数/.test(body.textContent), '確認に出る');
+  await buttonByText(body, '登録する').click();
+  await ui.settle();
+
+  const [p, file] = [...server.files.entries()][0];
+  const rec = JSON.parse(file.text);
+  assert.deepStrictEqual(rec.unclear, { text: 'ワーク p.32 問3、化学反応式の係数', resolvedAt: null });
+
+  ui.ctx.goTo('screen-top');
+  await ui.$('menu-review').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
+  const list = ui.$('review-list');
+  assert.ok(/理科（1）/.test(list.textContent) && /化学反応式の係数/.test(list.textContent));
+  assert.ok(/そもそも分からない/.test(list.textContent) && /正答率 〜50%/.test(list.textContent));
+  assert.strictEqual(ui.$('review-summary').textContent, 'まだ 1件　わかった 0件');
+
+  await buttonByText(list, 'わかった').click();
+  await ui.settle();
+  const today = ui.ctx.formatDate(new Date());
+  assert.strictEqual(JSON.parse(server.files.get(p).text).unclear.resolvedAt, today, '「わかった」が送られる');
+  assert.ok(/まだの項目はありません/.test(ui.$('review-list').textContent), '「まだ」には出ない');
+  await chipByText(ui.$('review-filter'), 'すべて').click();
+  assert.ok(/わかった /.test(ui.$('review-list').textContent));
+
+  // 直しても、書いた内容と「わかった」は消えない
+  ui.ctx.startEdit(rec.id);
+  await buttonByText(ui.$('step-body'), '更新する').click();
+  await ui.settle();
+  assert.deepStrictEqual(JSON.parse(server.files.get(p).text).unclear, { text: 'ワーク p.32 問3、化学反応式の係数', resolvedAt: today });
+
+  ui.ctx.goTo('screen-top');
+  await ui.$('menu-review').click();
+  await buttonByText(ui.$('review-list'), '取り消す').click();
+  await ui.settle();
+  assert.strictEqual(JSON.parse(server.files.get(p).text).unclear.resolvedAt, null);
+});
+
+test('わからなかったところ：書かなければ unclear は付かない。前からある記録を直しても形は変わらない（互換）', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const body = await inputUntilIssue(ui);
+  await chipByText(body, '前の内容があやしい').click();
+  await buttonByText(body, '次へ').click();
+  await buttonByText(body, '登録する').click();
+  await ui.settle();
+  const first = JSON.parse([...server.files.values()][0].text);
+  assert.ok(!('unclear' in first), '空欄なら付かない');
+
+  const today = ui.ctx.formatDate(new Date());
+  const old = sampleRecord({ id: today.replace(/-/g, '') + '-070000-oldx', date: today, issues: [{ id: 'i-nounder', label: 'そもそも分からない' }] });
+  ui.ctx.saveRecord(old);
+  await ui.settle();
+  ui.ctx.startEdit(old.id);
+  await buttonByText(ui.$('step-body'), '更新する').click();
+  await ui.settle();
+  const after = JSON.parse(server.files.get(`records/${today.slice(0, 7)}/${old.id}.json`).text);
+  assert.deepStrictEqual(Object.keys(after), Object.keys(old), '項目は増えない');
+  assert.ok(!('unclear' in after));
 });
 
 (async () => {

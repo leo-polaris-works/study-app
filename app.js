@@ -99,11 +99,7 @@ $('menu-record').addEventListener('click', () => {
   if (!isReadOnly()) startInput();
 });
 
-function openPlaceholder(title) {
-  $('placeholder-title').textContent = title;
-  showScreen('screen-placeholder');
-}
-$('menu-review').addEventListener('click', () => openPlaceholder('振り返り'));
+$('menu-review').addEventListener('click', () => openReview());
 $('menu-plan').addEventListener('click', () => openPlans());
 
 $('menu-settings').addEventListener('click', () => {
@@ -151,6 +147,8 @@ function newForm() {
     issueIds: [],
     issueOther: false,
     issueOtherText: '',
+    unclearText: '',
+    unclearResolvedAt: null,
     done: { when: false, amount: false, accuracy: false, issue: false },
     editing: null,
   };
@@ -605,6 +603,7 @@ function renderIssueStep(body) {
       form.issueIds = [];
       form.issueOther = false;
       form.issueOtherText = '';
+      form.unclearText = '';
       form.done.issue = true;
       renderStep();
       goNextSoon();
@@ -632,6 +631,22 @@ function renderIssueStep(body) {
   };
 
   const items = getActiveMaster('issue');
+  // 「わからなかった」の課題を選んだときだけ、わからなかったところを書ける（空欄でもよい）
+  const unclearBox = el('div', 'unclear-box');
+  unclearBox.appendChild(el('div', 'field-label', 'わからなかったところ（書けたら）'));
+  const unclearInput = el('textarea', 'issue-free unclear-input');
+  unclearInput.maxLength = UNCLEAR_MAX;
+  unclearInput.rows = 2;
+  unclearInput.placeholder = '例：理科ワーク p.32 問3、化学反応式の係数の決め方';
+  unclearInput.value = form.unclearText;
+  unclearInput.addEventListener('input', () => {
+    form.unclearText = unclearInput.value;
+  });
+  unclearBox.appendChild(unclearInput);
+  const showUnclear = () => {
+    unclearBox.hidden = !hasUnclearIssue();
+  };
+  showUnclear();
   const groups = [...ISSUE_GROUPS];
   items.forEach((i) => {
     if (!groups.includes(i.group)) groups.push(i.group);
@@ -654,10 +669,12 @@ function renderIssueStep(body) {
         }
         chip.classList.toggle('selected', form.issueIds.includes(i.id));
         afterChange();
+        showUnclear();
       });
       row.appendChild(chip);
     });
     body.appendChild(row);
+    if (g === UNCLEAR_GROUP) body.appendChild(unclearBox);
   });
 
   body.appendChild(el('div', 'group-label', 'その他'));
@@ -692,6 +709,14 @@ function renderIssueStep(body) {
   body.appendChild(nextBtn);
 }
 
+function hasUnclearIssue() {
+  const master = getMaster('issue');
+  return form.issueIds.some((id) => {
+    const item = findById(master, id);
+    return item && item.group === UNCLEAR_GROUP;
+  });
+}
+
 // 7. 確認
 function buildRecord() {
   const band = findById(getMaster('timeband'), form.timeBandId);
@@ -700,6 +725,8 @@ function buildRecord() {
   const issueMaster = getMaster('issue');
   const now = new Date();
   const editing = form.editing;
+  const unclearText = form.unclearText.trim().slice(0, UNCLEAR_MAX);
+  const unclear = hasUnclearIssue() && unclearText ? { text: unclearText, resolvedAt: form.unclearResolvedAt || null } : null;
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -725,6 +752,7 @@ function buildRecord() {
         .map((i) => ({ id: i.id, label: i.label })),
       ...(form.issueOther ? [{ id: 'i-free', label: 'その他', text: form.issueOtherText.trim() }] : []),
     ],
+    ...(unclear ? { unclear } : {}),
     device: editing ? editing.device : getDevice(),
     createdAt: editing ? editing.createdAt : localIso(now),
     updatedAt: localIso(now),
@@ -755,6 +783,10 @@ function appendRecordRows(list, r) {
     '課題',
     r.issues.length ? r.issues.map((i) => (i.text ? `${i.label}：${i.text}` : i.label)).join('、') : '特になし'
   );
+  if (r.unclear) {
+    const done = r.unclear.resolvedAt ? `（わかった ${displayDate(r.unclear.resolvedAt)}）` : '';
+    addConfirmRow(list, 'わからなかったところ', r.unclear.text + done);
+  }
 }
 
 function addConfirmRow(list, term, lines) {
@@ -804,6 +836,8 @@ function recordToForm(r) {
   const free = r.issues.find((i) => i.id === 'i-free');
   f.issueOther = !!free;
   f.issueOtherText = free ? free.text || '' : '';
+  f.unclearText = r.unclear ? r.unclear.text : '';
+  f.unclearResolvedAt = r.unclear ? r.unclear.resolvedAt : null;
   f.done = { when: true, amount: true, accuracy: true, issue: true };
   f.editing = { id: r.id, createdAt: r.createdAt, device: r.device };
   return f;
@@ -1270,6 +1304,7 @@ function handleSyncChange() {
   if (currentScreen === 'screen-top') renderTop();
   else if (currentScreen === 'screen-records') renderRecordsList();
   else if (currentScreen === 'screen-plans') renderPlansList();
+  else if (currentScreen === 'screen-review') renderReview();
   else if (currentScreen === 'screen-plan-result') renderPlanResult();
   else if (currentScreen === 'screen-sync') renderSyncScreen();
   else if (currentScreen === 'screen-done') renderDoneSync();

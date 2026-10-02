@@ -190,6 +190,8 @@ function isValidRecord(r) {
   if (r.accuracy !== null && !(r.accuracy && typeof r.accuracy.level === 'number' && isStr(r.accuracy.label))) return false;
   if (!r.device || !isStr(r.device.id) || !isStr(r.device.kind)) return false;
   if (!isStr(r.createdAt) || !isStr(r.updatedAt) || typeof r.deleted !== 'boolean') return false;
+  // わからなかったところ（なくてもよい）
+  if (r.unclear !== undefined && !(r.unclear && isStr(r.unclear.text) && (r.unclear.resolvedAt === null || isStr(r.unclear.resolvedAt)))) return false;
   return true;
 }
 
@@ -381,7 +383,7 @@ function seedSampleData() {
   const today = formatDate(new Date());
   const device = getDevice();
   const rows = [
-    { d: 0, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 25, fields: [['f-sc-chem', '化学', 15], ['f-sc-bio', '生物', 10]], materials: [['m-sc-work', 'ワーク', 5, 'ページ'], ['m-sc-redo', '解き直し', 8, '問題']], accuracy: { level: 3, label: '〜70%' }, issues: [['i-forgot', '前のを忘れた']] },
+    { d: 0, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 25, fields: [['f-sc-chem', '化学', 15], ['f-sc-bio', '生物', 10]], materials: [['m-sc-work', 'ワーク', 5, 'ページ'], ['m-sc-redo', '解き直し', 8, '問題']], accuracy: { level: 3, label: '〜70%' }, issues: [['i-nounder', 'そもそも分からない'], ['i-forgot', '前のを忘れた']], unclear: 'ワーク p.12 問4、化学反応式の係数の決め方' },
     { d: 0, band: ['tb-evening', '夕方'], subject: '数学', activity: ['a-hw', '宿題・提出物'], minutes: 50, fields: [['f-ma-calc', '計算', 20], ['f-ma-word', '文章題', 30]], materials: [['m-ma-hw', '宿題', 6, 'ページ']], accuracy: { level: 4, label: '〜90%' }, issues: [] },
     { d: -1, band: ['tb-morning', '朝'], subject: '英語', activity: ['a-review-week', '復習（今週の授業）'], minutes: 15, fields: [['f-en-word', '単語・熟語', 15]], materials: [['m-en-word', '単語', 30, '語']], accuracy: null, issues: [] },
     { d: -2, band: ['tb-night', '夜'], subject: '社会', activity: ['a-review-past', '復習（先週以前）'], minutes: 25, fields: [['f-so-history', '歴史', 25]], materials: [['m-so-text', '教科書', 4, 'ページ']], accuracy: { level: 2, label: '〜50%' }, issues: [['i-again', 'また間違えた'], ['i-seeans', '見れば分かる']] },
@@ -401,6 +403,7 @@ function seedSampleData() {
       materials: r.materials.map((m) => ({ id: m[0], label: m[1], amount: { value: m[2], unit: m[3] } })),
       accuracy: r.accuracy,
       issues: r.issues.map((x) => ({ id: x[0], label: x[1] })),
+      ...(r.unclear ? { unclear: { text: r.unclear, resolvedAt: null } } : {}),
       device,
       createdAt: now,
       updatedAt: now,

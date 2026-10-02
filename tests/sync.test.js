@@ -779,6 +779,31 @@ test('互換：plans/ に知らないファイル・壊れた計画があって�
   eq(server.requests('PUT').length, 0);
 });
 
+test('互換：わからなかったところ（unclear）がある記録も、ない記録も読める。形が違う unclear は取り込まない。別の端末にそのまま届く', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const d = today(a);
+  const plainRec = sampleRecord({ id: idFor(d, 'u0aa'), date: d });
+  const withNote = Object.assign(sampleRecord({ id: idFor(d, 'u1aa'), date: d }), { unclear: { text: '係数の決め方', resolvedAt: null } });
+  const resolved = Object.assign(sampleRecord({ id: idFor(d, 'u2aa'), date: d }), { unclear: { text: '天気図', resolvedAt: d } });
+  [plainRec, withNote, resolved].forEach((r) => assert.ok(a.ctx.isValidRecord(r)));
+  [{ text: 1, resolvedAt: null }, { text: 'x' }, null, 'x'].forEach((u) => assert.ok(!a.ctx.isValidRecord(Object.assign(sampleRecord({ id: 'x', date: d }), { unclear: u })), JSON.stringify(u)));
+
+  [plainRec, withNote, resolved].forEach((r) => a.ctx.saveRecord(r));
+  await a.ctx.syncNow({ force: true });
+  const bad = Object.assign(sampleRecord({ id: idFor(d, 'u3aa'), date: d }), { unclear: { text: 5, resolvedAt: null } });
+  server.putFile(`records/${d.slice(0, 7)}/${bad.id}.json`, JSON.stringify(bad));
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.findRecord(withNote.id), withNote);
+  eq(b.ctx.findRecord(resolved.id), resolved);
+  eq(b.ctx.findRecord(plainRec.id), plainRec);
+  assert.ok(!('unclear' in b.ctx.findRecord(plainRec.id)));
+  assert.ok(!b.ctx.findRecord(bad.id));
+});
+
 (async () => {
   let failed = 0;
   for (const t of tests) {
