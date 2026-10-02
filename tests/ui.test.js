@@ -25,6 +25,10 @@ class El {
     this.style = {};
     this.listeners = {};
     this.classSet = new Set();
+    this.attrs = {};
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = String(v);
   }
   get className() {
     return [...this.classSet].join(' ');
@@ -133,7 +137,7 @@ function makeUi(server, extra) {
     setTimeout,
     clearTimeout,
     navigator: { userAgent: 'Android', maxTouchPoints: 5 },
-    location: { search: (extra && extra.search) || '' },
+    location: { search: (extra && extra.search) || '', hostname: (extra && extra.hostname) || 'leo-polaris-works.github.io' },
     alert: () => {},
     confirm: (msg) => {
       state.confirms.push(msg);
@@ -147,6 +151,7 @@ function makeUi(server, extra) {
       },
       querySelectorAll: (sel) => (sel === '.screen' ? screens : sel === '[data-goto]' ? gotos : []),
       createElement: (tag) => new El(tag),
+      createElementNS: (ns, tag) => new El(tag),
       addEventListener: (t, fn) => (docListeners[t] = docListeners[t] || []).push(fn),
       visibilityState: 'visible',
     },
@@ -157,7 +162,7 @@ function makeUi(server, extra) {
   };
   context.window.document = context.document;
   const ctx = vm.createContext(context);
-  ['config.js', 'master.js', 'data.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js'].forEach((f) => {
+  ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(APP_DIR, f), 'utf8'), ctx, { filename: f });
   });
   ctx.run = (code) => vm.runInContext(code, ctx);
@@ -468,6 +473,152 @@ test('入力の全ページ（いつ→やったこと・教科→学習内容�
 test('実機テスト用のサンプルボタンは ?dev=1 のときだけ出る', () => {
   assert.ok(makeUi(newServer()).$('dev-tools').hidden);
   assert.ok(!makeUi(newServer(), { search: '?dev=1' }).$('dev-tools').hidden);
+});
+
+test('学習計画：作る→保存して計算→結果（目標・グラフ）が出て送信される。入力漏れ・割合の合計違いは保存しない。直す・削除もできる', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  await ui.$('menu-plan').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plans']);
+  assert.ok(/まだ計画がありません/.test(ui.$('plans-list').textContent));
+
+  await ui.$('btn-plan-new').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-edit']);
+  const body = ui.$('plan-edit-body');
+  assert.ok(/合計 100%/.test(body.textContent), '月ごとの割合の初期値は合計100%');
+  await ui.$('btn-plan-save').click();
+  assert.ok(!ui.$('plan-edit-error').hidden, '名前がないと保存しない');
+
+  const inputs = findAll(body, (e) => e.classSet.has('plan-input'));
+  inputs[0].value = '後期中間';
+  inputs[0].listeners.change[0]();
+  await findAll(body, (e) => e.textContent === '＋教材')[3].click(); // 理科
+  await ui.$('btn-plan-save').click();
+  assert.ok(/量が入っていない/.test(ui.$('plan-edit-error').textContent));
+  const nums = () => findAll(ui.$('plan-edit-body'), (e) => e.classSet.has('setting-number'));
+  nums()[0].value = '40';
+  nums()[0].listeners.change[0]();
+  const month = nums()[2]; // 量・周回の次が、月ごとの割合の最初の欄
+  const before = month.value;
+  month.value = String(Number(before) + 5);
+  month.listeners.change[0]();
+  await ui.$('btn-plan-save').click();
+  assert.ok(/合計100%/.test(ui.$('plan-edit-error').textContent), '割合の合計が100%でないと保存しない');
+  month.value = before;
+  month.listeners.change[0]();
+  await ui.$('btn-plan-save').click();
+  await ui.settle();
+
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+  assert.strictEqual(ui.$('plan-result-title').textContent, '後期中間');
+  const result = ui.$('plan-result-body');
+  ['テストまで', 'テストまでの流れ', '今週の目標', '今日・明日の目安', '教材ごとの進み具合', '週ごとの目安時間', '計画と実績', '理科 宿題'].forEach((t) => assert.ok(result.textContent.includes(t), t));
+  assert.ok(findAll(result, (e) => e.tagName === 'svg').length >= 2, 'グラフが描かれる');
+  const files = [...server.files.keys()].filter((k) => k.startsWith('plans/'));
+  assert.strictEqual(files.length, 1);
+  assert.strictEqual(JSON.parse(server.files.get(files[0]).text).items[0].amount, 40);
+
+  // 周回のチェック：×の数を入れて「決定」すると保存され、次の周の量になる
+  await buttonByText(ui.$('plan-result-body'), '1周目が終わった').click();
+  const form = ui.$('plan-result-body');
+  const xInput = findAll(form, (e) => e.classSet.has('setting-number'))[0];
+  xInput.value = '7';
+  await buttonByText(form, '決定').click();
+  await ui.settle();
+  const saved = ui.ctx.findPlan(ui.ctx.loadActivePlans()[0].id);
+  assert.strictEqual(saved.items[0].lapMarks[0].nextAmount, 7);
+  assert.ok(/2周目 7ページ/.test(ui.$('plan-result-body').textContent));
+  assert.ok(buttonByText(ui.$('plan-result-body'), '2周目が終わった'));
+  assert.strictEqual(JSON.parse(server.files.get(files[0]).text).items[0].lapMarks.length, 1, 'チェックも送信される');
+  await buttonByText(ui.$('plan-result-body'), '取り消す').click();
+  await ui.settle();
+  assert.strictEqual(ui.ctx.findPlan(saved.id).items[0].lapMarks.length, 0);
+
+  await ui.$('btn-plan-edit').click();
+  assert.strictEqual(ui.$('plan-edit-title').textContent, '計画を直す');
+  await ui.$('btn-plan-edit-back').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+
+  await ui.$('btn-plan-delete').click();
+  await ui.settle();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plans']);
+  assert.strictEqual(ui.ctx.loadActivePlans().length, 0);
+  assert.strictEqual(JSON.parse(server.files.get(files[0]).text).deleted, true);
+});
+
+test('学習計画の結果：遅れ・目安の日に間に合わない周があっても表示でき、説明が出る', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const today = ui.ctx.formatDate(new Date());
+  const p = JSON.parse(JSON.stringify(ui.ctx.newPlan()));
+  p.name = '後ろ寄り';
+  p.startDate = ui.ctx.shiftDate(today, -10);
+  p.testDate = ui.ctx.shiftDate(today, 12);
+  const months = ui.ctx.planMonths(p.startDate, p.testDate);
+  p.months = months.map((m, i) => ({ month: m.month, percent: i === months.length - 1 ? 100 : 0 }));
+  if (months.length === 1) p.months[0].percent = 100;
+  p.items = [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 400, laps: 2, lapMarks: [] }];
+  p.firstAccuracy = 0.95;
+  ui.ctx.savePlan(p);
+  const r = sampleRecord({ id: today.replace(/-/g, '') + '-190000-zzzz', date: ui.ctx.shiftDate(today, -1) });
+  r.subject = '理科';
+  r.materials = [{ id: 'm-sc-work', label: 'ワーク', amount: { value: 3, unit: 'ページ' } }];
+  ui.ctx.saveRecord(r);
+  await ui.$('menu-plan').click();
+  await findAll(ui.$('plans-list'), (e) => e.classSet.has('record-item'))[0].click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+  const text = ui.$('plan-result-body').textContent;
+  assert.ok(/遅れている教材/.test(text) && /今月の残りの日に分けました/.test(text), '遅れ');
+  assert.ok(/間に合わない周があります/.test(text), '目安の日');
+  assert.ok(/3 \/ /.test(text), '記録が進み具合に入る');
+});
+
+test('テスト用（localhost）：鍵なしで開き、記録・計画は端末内だけに保存され、GitHub に1回も通信しない。公開ページではロックのまま', async () => {
+  assert.deepStrictEqual(makeUi(newServer()).visibleScreens(), ['screen-sync'], '公開ページでは鍵が必要');
+  const server = newServer();
+  const ui = makeUi(server, { hostname: 'localhost', search: '?dev=1' });
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-top']);
+  assert.ok(/テスト用/.test(ui.$('sync-line').textContent));
+  await ui.$('sync-line').click();
+  assert.ok(ui.$('sync-token-section').hidden && ui.$('btn-sync-connect').hidden && ui.$('sync-manage').hidden, '鍵の欄は出ない');
+  await ui.$('sync-admin').children[0].click();
+  ui.ctx.goTo('screen-top');
+
+  const body = ui.$('step-body');
+  await ui.$('menu-record').click();
+  await chipByText(body, '50分').click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, 'テスト対策').click();
+  await chipByText(body, '英語').click();
+  await wait(250);
+  await chipByText(body, '残り').click();
+  await buttonByText(body, '次へ').click();
+  await findAll(body, (e) => e.classSet.has('chip') && /^\d+$/.test(e.textContent))[0].click();
+  await buttonByText(body, '次へ').click();
+  await chipByText(body, '〜70%').click();
+  await wait(250);
+  await chipByText(body, '特になし').click();
+  await wait(250);
+  await buttonByText(body, '登録する').click();
+  await ui.settle();
+  assert.ok(/送信しません/.test(ui.$('done-sync').textContent));
+
+  const p = JSON.parse(JSON.stringify(ui.ctx.newPlan()));
+  p.name = 'テスト';
+  p.items = [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3 }];
+  ui.ctx.savePlan(p);
+  await ui.ctx.syncNow({ force: true });
+  await ui.settle();
+  assert.strictEqual(ui.ctx.loadActiveRecords().length, 1);
+  assert.strictEqual(ui.ctx.loadActivePlans().length, 1);
+  assert.strictEqual(server.log.length, 0, 'GitHub に通信しない');
+  const r = await ui.ctx.connectWithToken({ token: TOKEN_W, mode: 'write' });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(server.log.length, 0, '鍵を入れても通信しない');
 });
 
 (async () => {

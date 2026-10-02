@@ -175,3 +175,20 @@ const MASTER_TITLES = {
   issue: '課題',
   timeband: '時間帯',
 };
+
+// 学習計画（逆算）の既定値。考え方は非公開側の設計文書にある
+const PLAN_DEFAULTS = {
+  firstAccuracy: 0.6, // 1周目の正答率の見込み（記録が少ない間）
+  laps: { ページ: 3, 問題: 3, 語: 3, 字: 3, 個: 3, 回: 1 },
+  lapsByMaterial: { 'm-sc-term': 5, 'm-so-term': 5 },
+  pace: { ページ: 6, 問題: 2, 語: 0.5, 字: 0.5, 個: 1, 回: 20 }, // 1単位あたりの分（記録が少ない間）
+  minPaceSamples: 3,
+  redoFactor: 1.2, // 解き直しは1単位に時間がかかる
+  memoDecay: 0.5, // 暗記は周ごとに時間が半分になる
+  phase1Days: 7, // テストの何日前までに1周目を終えるか
+  phase2Days: 3, // テストの何日前までに解き直しを終えるか
+  lagRatio: 0.85, // 実績÷計画がこれ未満なら「遅れ」と表示する
+  accuracyRates: { 1: 0.2, 2: 0.4, 3: 0.6, 4: 0.75, 5: 0.9 },
+};
+
+const PHASE_LABELS = { 1: '1周目', 2: '解き直し', 3: '仕上げ' };

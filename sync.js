@@ -3,13 +3,17 @@
 
 const SYNC_CONFIG_KEY = 'study_sync_v1';
 const SYNC_STATE_KEY = 'study_sync_state_v1';
-const PULL_WINDOW_DAYS = 28; // 他の端末の記録を取り込む範囲（作成日から）
+const PULL_WINDOW_DAYS = 63; // 他の端末の記録を取り込む範囲（作成日から）。学習計画の期間と振り返りに使う
 const PULL_INTERVAL_MS = 60 * 1000; // 取り込みの間隔（手動・登録直後を除く）
 const PUT_RETRY_MAX = 3;
 const FETCH_PARALLEL = 4;
 const RECORD_FILE_PATTERN = /^(\d{8})-\d{6}-[a-z0-9]+\.json$/;
+const PLAN_FILE_PATTERN = /^plan-\d{8}-\d{6}-[a-z0-9]+\.json$/;
 
 let syncSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// パソコンで開いたテスト用（localhost）。鍵なしで使え、どこにも送らない（公開ページではこうならない）
+const LOCAL_TEST = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || '');
 
 // --- 鍵と接続先の設定（端末内） ---
 function loadSyncConfig() {
@@ -34,6 +38,7 @@ function persistSyncState(patch) {
 
 // 鍵がなければ、または使えなければロック（鍵の画面以外は開かない）。通信できないだけならロックしない
 function getLockState() {
+  if (LOCAL_TEST) return { locked: false, reason: null };
   const cfg = loadSyncConfig();
   if (!cfg) return { locked: true, reason: 'nokey' };
   if (cfg.authFailed) return { locked: true, reason: 'auth' };
@@ -103,10 +108,11 @@ function getSyncSummary() {
   const lock = getLockState();
   return {
     configured: !!cfg,
+    localTest: LOCAL_TEST,
     locked: lock.locked,
     lockReason: lock.reason,
     mode: cfg ? cfg.mode : null,
-    pending: pendingIds().length,
+    pending: pendingIds().length + pendingPlanIds().length,
     running: syncState.running,
     error: syncState.error,
     notice: syncState.notice,
@@ -116,6 +122,7 @@ function getSyncSummary() {
 
 // --- 鍵を入れて確認する／消す ---
 async function connectWithToken(input) {
+  if (LOCAL_TEST) return { ok: false, message: 'テスト用（このパソコン）では鍵を使いません' };
   const v = validateTokenInput(input);
   if (!v.ok) return { ok: false, errors: v.errors };
   const cfg = {
@@ -170,10 +177,16 @@ function serializeRecord(record) {
   return JSON.stringify(record, null, 2) + '\n';
 }
 
-function parseRecordText(text, expectedId) {
+// 記録と計画は同じ仕組みで送受信する
+const DOC_KINDS = {
+  record: { find: (id) => findRecord(id), apply: (d, p, sha) => applyRemoteRecord(d, p, sha), valid: (d) => isValidRecord(d), path: (d) => defaultRecordPath(d), pending: () => pendingIds(), done: (id) => clearPending(id), label: (d, sha) => (d.deleted ? '削除' : sha ? '修正' : '記録') },
+  plan: { find: (id) => findPlan(id), apply: (d, p, sha) => applyRemotePlan(d, p, sha), valid: (d) => isValidPlan(d), path: (d) => defaultPlanPath(d), pending: () => pendingPlanIds(), done: (id) => clearPendingPlan(id), label: (d) => (d.deleted ? '計画の削除' : '計画') },
+};
+
+function parseDocText(kind, text, expectedId) {
   try {
     const r = JSON.parse(text);
-    return isValidRecord(r) && r.id === expectedId ? r : null;
+    return DOC_KINDS[kind].valid(r) && r.id === expectedId ? r : null;
   } catch (e) {
     return null;
   }
@@ -182,14 +195,15 @@ function parseRecordText(text, expectedId) {
 // --- 送る ---
 // 戻り値：'sent'（送れた・すでに同じ内容だった）／'adopted'（別の端末のほうが新しく、その内容にそろえた）
 // 止めるべき失敗（通信・鍵・権限など）は例外で返す
-async function sendRecord(cfg, record) {
+async function sendDoc(cfg, kind, record) {
+  const k = DOC_KINDS[kind];
   const meta = getMeta(record.id);
-  const path = meta.path || defaultRecordPath(record);
+  const path = meta.path || k.path(record);
   const text = serializeRecord(record);
   let sha = meta.sha || null;
 
   for (let attempt = 0; attempt < PUT_RETRY_MAX; attempt++) {
-    const label = record.deleted ? '削除' : sha ? '修正' : '記録';
+    const label = k.label(record, sha);
     try {
       const res = await githubPutFile(cfg, path, text, `${label} ${record.id}`, sha);
       setMeta(record.id, { path, sha: res.sha });
@@ -203,9 +217,9 @@ async function sendRecord(cfg, record) {
         await syncSleep(1200 * (attempt + 1));
         continue;
       }
-      const remoteRecord = parseRecordText(remote.text, record.id);
+      const remoteRecord = parseDocText(kind, remote.text, record.id);
       if (remoteRecord && stamp(remoteRecord.updatedAt) > stamp(record.updatedAt)) {
-        applyRemoteRecord(remoteRecord, path, remote.sha);
+        k.apply(remoteRecord, path, remote.sha);
         return 'adopted';
       }
       if (remote.text === text) {
@@ -235,20 +249,23 @@ async function doFlush() {
   const result = { sent: 0, adopted: 0 };
   const cfg = loadSyncConfig();
   if (!cfg || cfg.mode === 'read' || getLockState().locked) return result;
-  for (const id of pendingIds()) {
-    const record = findRecord(id);
-    if (!record) {
-      clearPending(id);
-      continue;
-    }
-    const outcome = await sendRecord(cfg, record);
-    if (outcome === 'adopted') {
-      clearPending(id);
-      result.adopted++;
-    } else {
-      const current = findRecord(id);
-      if (current && current.updatedAt === record.updatedAt) clearPending(id); // 送信中に直された場合は待ちに残す
-      result.sent++;
+  for (const kind of ['record', 'plan']) {
+    const k = DOC_KINDS[kind];
+    for (const id of k.pending()) {
+      const record = k.find(id);
+      if (!record) {
+        k.done(id);
+        continue;
+      }
+      const outcome = await sendDoc(cfg, kind, record);
+      if (outcome === 'adopted') {
+        k.done(id);
+        result.adopted++;
+      } else {
+        const current = k.find(id);
+        if (current && current.updatedAt === record.updatedAt) k.done(id); // 送信中に直された場合は待ちに残す
+        result.sent++;
+      }
     }
   }
   return result;
@@ -298,18 +315,31 @@ async function doPull(cfg) {
     });
   }
 
+  // 計画は数が少ないので、すべて見る
+  const pendingPlans = pendingPlanIds();
+  const planEntries = await githubListDir(cfg, 'plans');
+  planEntries.forEach((entry) => {
+    if (!PLAN_FILE_PATTERN.test(entry.name)) return;
+    const id = entry.name.slice(0, -'.json'.length);
+    if (pendingPlans.includes(id)) return;
+    if (findPlan(id) && getMeta(id).sha === entry.sha) return;
+    targets.push({ id, path: entry.path, listedSha: entry.sha, kind: 'plan' });
+  });
+
   const result = { fetched: 0, invalid: 0 };
   await mapLimit(targets, FETCH_PARALLEL, async (t) => {
+    const kind = t.kind || 'record';
+    const k = DOC_KINDS[kind];
     const file = await githubGetFile(cfg, t.path);
     if (!file) return;
-    const remote = parseRecordText(file.text, t.id);
+    const remote = parseDocText(kind, file.text, t.id);
     if (!remote) {
       result.invalid++;
       return;
     }
-    const local = findRecord(t.id);
+    const local = k.find(t.id);
     if (!local || stamp(remote.updatedAt) > stamp(local.updatedAt)) {
-      applyRemoteRecord(remote, t.path, file.sha);
+      k.apply(remote, t.path, file.sha);
       result.fetched++;
     } else {
       setMeta(t.id, { path: t.path, sha: file.sha });
@@ -332,6 +362,7 @@ function syncNow(opts) {
 }
 
 async function doSync(opts) {
+  if (LOCAL_TEST) return getSyncSummary();
   const cfg = loadSyncConfig();
   if (!cfg || getLockState().locked) return getSyncSummary();
 

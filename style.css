@@ -826,3 +826,257 @@ h2 {
   color: var(--color-primary-text);
   font-weight: bold;
 }
+
+/* 学習計画 */
+.plan-section,
+.plan-card {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 4px 14px 12px;
+  margin-bottom: 14px;
+}
+
+.plan-heading {
+  font-size: 15px;
+  margin: 12px 0 8px;
+}
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.plan-row-label {
+  flex: 1;
+}
+
+.plan-input {
+  font-size: 16px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 190px;
+}
+
+.plan-subject {
+  border-top: 1px solid #eee;
+  padding: 8px 0;
+}
+
+.plan-subject-name {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.plan-item,
+.lap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.plan-item .setting-select {
+  flex: 1;
+  min-width: 90px;
+}
+
+.plan-unit {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.plan-sum {
+  font-size: 14px;
+  font-weight: bold;
+  margin: 8px 0;
+}
+
+.plan-sum.warn {
+  color: var(--color-warn);
+}
+
+.plan-big {
+  font-size: 17px;
+  font-weight: bold;
+  margin: 12px 0 6px;
+}
+
+.plan-ok {
+  color: var(--color-primary);
+  font-size: 14px;
+}
+
+.plan-short {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.plan-note {
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.plan-list {
+  font-size: 14px;
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.plan-target {
+  margin: 12px 0;
+}
+
+.plan-target-main {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.plan-target-sub {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 3px;
+}
+
+.plan-day-target {
+  display: flex;
+  gap: 10px;
+  font-size: 14px;
+  margin: 6px 0;
+}
+
+.plan-day-when {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.lap-track {
+  display: flex;
+  height: 14px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #eee;
+}
+
+.lap-seg {
+  height: 100%;
+  border-right: 1px solid #fff;
+  background: #e6edf5;
+}
+
+.lap-fill {
+  height: 100%;
+}
+
+.lap-1 .lap-fill {
+  background: #2b6cb0;
+}
+
+.lap-2 .lap-fill {
+  background: #5a8fc8;
+}
+
+.lap-3 .lap-fill {
+  background: #8fb3dc;
+}
+
+.plan-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.plan-svg .month-band {
+  fill: var(--color-primary);
+}
+
+.plan-svg .phase-label {
+  fill: #fff;
+  font-size: 11px;
+}
+
+.plan-svg .axis-label {
+  fill: var(--color-muted);
+  font-size: 10px;
+}
+
+.plan-svg .today-line {
+  stroke: var(--color-text);
+  stroke-width: 1.5;
+}
+
+.plan-svg .deadline-line {
+  stroke: var(--color-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.plan-svg .axis {
+  stroke: var(--color-border);
+}
+
+.plan-svg .line-plan {
+  fill: none;
+  stroke: var(--color-muted);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.plan-svg .line-actual {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2.5;
+}
+
+.week-chart {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.week-col {
+  flex: 1 0 40px;
+  text-align: center;
+}
+
+.week-value {
+  font-size: 10px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.day-box {
+  position: relative;
+  height: 90px;
+}
+
+.day-used {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: #8fb3dc;
+}
+
+.week-col.is-today .day-used {
+  background: var(--color-primary);
+}
+
+.day-label {
+  font-size: 10px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.week-col.is-today .day-label {
+  color: var(--color-text);
+  font-weight: bold;
+}

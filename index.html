@@ -44,11 +44,37 @@
   </div>
 </section>
 
-<!-- 準備中（振り返り・学習計画） -->
+<!-- 準備中（振り返り） -->
 <section id="screen-placeholder" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
   <h2 id="placeholder-title"></h2>
   <p>準備中です。記録の項目が固まってから作ります。</p>
+</section>
+
+<!-- 学習計画：一覧 -->
+<section id="screen-plans" class="screen" hidden>
+  <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
+  <h2>学習計画</h2>
+  <div id="plans-list"></div>
+  <button class="btn btn-primary btn-big" id="btn-plan-new">新しい計画を作る</button>
+</section>
+
+<!-- 学習計画：編集 -->
+<section id="screen-plan-edit" class="screen" hidden>
+  <button class="btn btn-back" id="btn-plan-edit-back">← 戻る</button>
+  <h2 id="plan-edit-title">計画を作る</h2>
+  <div id="plan-edit-body"></div>
+  <div class="field-warn" id="plan-edit-error" hidden></div>
+  <button class="btn btn-primary btn-big" id="btn-plan-save">保存して計算する</button>
+</section>
+
+<!-- 学習計画：結果 -->
+<section id="screen-plan-result" class="screen" hidden>
+  <button class="btn btn-back" data-goto="screen-plans">← 一覧へ</button>
+  <h2 id="plan-result-title"></h2>
+  <div id="plan-result-body"></div>
+  <button class="btn btn-big" id="btn-plan-edit">計画を直す</button>
+  <button class="btn btn-big btn-danger" id="btn-plan-delete">削除する</button>
 </section>
 
 <!-- 入力（1項目1ページ。上部に現在地バー） -->
@@ -132,10 +158,12 @@
 <script src="config.js"></script>
 <script src="master.js"></script>
 <script src="data.js"></script>
+<script src="plan.js"></script>
 <script src="github.js"></script>
 <script src="sync.js"></script>
 <script src="messages.js"></script>
 <script src="images.js"></script>
 <script src="app.js"></script>
+<script src="plan-ui.js"></script>
 </body>
 </html>

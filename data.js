@@ -203,15 +203,124 @@ function applyRemoteRecord(record, path, sha) {
   setMeta(record.id, { path, sha });
 }
 
-// 送信済みの記録の控えを消す（鍵を消すとき）。送信待ちの記録は残す
+// 送信済みの記録・計画の控えを消す（鍵を消すとき）。送信待ちは残す
 function clearSyncedRecords() {
-  const pending = pendingIds();
+  const pending = pendingIds().concat(pendingPlanIds());
   writeRecords(loadRecords().filter((r) => pending.includes(r.id)));
+  writePlans(loadPlans().filter((p) => pending.includes(p.id)));
   const meta = readJson(META_KEY, {});
   Object.keys(meta).forEach((id) => {
     if (!pending.includes(id)) delete meta[id];
   });
   localStorage.setItem(META_KEY, JSON.stringify(meta));
+}
+
+// --- 学習計画（1計画＝1ファイル。記録と同じく端末内が先で、送信は sync.js） ---
+const PLANS_KEY = 'study_plans_v1';
+const PLAN_OUTBOX_KEY = 'study_plan_outbox_v1';
+const PLAN_PREFIX = 'plan-';
+
+function loadPlans() {
+  const list = readJson(PLANS_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writePlans(plans) {
+  localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
+}
+
+function loadActivePlans() {
+  return loadPlans()
+    .filter((p) => !p.deleted)
+    .sort((a, b) => (a.testDate < b.testDate ? 1 : a.testDate > b.testDate ? -1 : 0));
+}
+
+function findPlan(id) {
+  return loadPlans().find((p) => p.id === id) || null;
+}
+
+function defaultPlanPath(plan) {
+  return `plans/${plan.id}.json`;
+}
+
+function pendingPlanIds() {
+  const list = readJson(PLAN_OUTBOX_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function markPlanPending(plan) {
+  if (!getMeta(plan.id).path) setMeta(plan.id, { path: defaultPlanPath(plan) });
+  const ids = pendingPlanIds();
+  if (!ids.includes(plan.id)) ids.push(plan.id);
+  localStorage.setItem(PLAN_OUTBOX_KEY, JSON.stringify(ids));
+}
+
+function clearPendingPlan(id) {
+  localStorage.setItem(PLAN_OUTBOX_KEY, JSON.stringify(pendingPlanIds().filter((x) => x !== id)));
+}
+
+function putPlan(plan) {
+  const plans = loadPlans();
+  const i = plans.findIndex((p) => p.id === plan.id);
+  if (i >= 0) plans[i] = plan;
+  else plans.push(plan);
+  writePlans(plans);
+}
+
+function savePlan(plan) {
+  plan.updatedAt = localIso();
+  putPlan(plan);
+  markPlanPending(plan);
+}
+
+function markPlanDeleted(id) {
+  const plan = findPlan(id);
+  if (!plan) return;
+  plan.deleted = true;
+  savePlan(plan);
+}
+
+function applyRemotePlan(plan, path, sha) {
+  putPlan(plan);
+  setMeta(plan.id, { path, sha });
+}
+
+// 新しい計画。1周目の正答率の見込みは、前の計画があればそこから写す
+function newPlan(today = formatDate(new Date())) {
+  const prev = loadActivePlans()[0];
+  const now = localIso();
+  const testDate = shiftDate(today, 28);
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: PLAN_PREFIX + makeRecordId(),
+    name: '',
+    testDate,
+    startDate: today,
+    items: [],
+    months: defaultPlanMonths(today, testDate),
+    firstAccuracy: prev ? prev.firstAccuracy : PLAN_DEFAULTS.firstAccuracy,
+    device: getDevice(),
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
+  };
+}
+
+// 計画の形の確認（他の端末から取り込む JSON は必ず通す）
+function isValidPlan(p) {
+  const isStr = (v) => typeof v === 'string';
+  const isDate = (v) => isStr(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const isNum = (v) => typeof v === 'number' && isFinite(v);
+  const isMark = (m) => m && isNum(m.lap) && isDate(m.date) && (m.nextAmount === null || isNum(m.nextAmount));
+  const isItem = (it) =>
+    it && isStr(it.materialId) && SUBJECTS.includes(it.subject) && isStr(it.label) && isStr(it.unit) && isNum(it.amount) && isNum(it.laps) && (it.lapMarks === undefined || (Array.isArray(it.lapMarks) && it.lapMarks.every(isMark)));
+  if (!p || typeof p !== 'object' || !isStr(p.id) || !p.id.startsWith(PLAN_PREFIX)) return false;
+  if (!isNum(p.schemaVersion) || !isStr(p.name) || !isDate(p.testDate) || !isDate(p.startDate)) return false;
+  if (!Array.isArray(p.items) || !p.items.every(isItem)) return false;
+  if (!Array.isArray(p.months) || !p.months.every((m) => m && isStr(m.month) && /^\d{4}-\d{2}$/.test(m.month) && isNum(m.percent))) return false;
+  if (!isNum(p.firstAccuracy)) return false;
+  if (!isStr(p.createdAt) || !isStr(p.updatedAt) || typeof p.deleted !== 'boolean') return false;
+  return true;
 }
 
 function findRecord(id) {

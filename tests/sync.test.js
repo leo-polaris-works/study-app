@@ -4,7 +4,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { FakeGitHub, makeDevice, sampleRecord, APP_DIR, REPO } = require('./harness');
+const { FakeGitHub, makeDevice, sampleRecord, APP_DIR, OWNER, REPO } = require('./harness');
 
 const TOKEN_W = 'github_pat_' + 'W'.repeat(60);
 const TOKEN_W2 = 'github_pat_' + 'X'.repeat(60);
@@ -383,15 +383,15 @@ test('2台：Aの登録がBの一覧に出る／Bの修正がAに反映される
   assert.strictEqual(b.ctx.findRecord(r.id).deleted, true);
 });
 
-test('取り込みの範囲：28日より前の作成分は取りにいかない。変わっていないファイルは再取得しない', async () => {
+test('取り込みの範囲：63日より前の作成分は取りにいかない。変わっていないファイルは再取得しない', async () => {
   const server = newWorld();
   const a = makeDevice(server, 'iPad');
   const b = makeDevice(server, 'Android');
   await connect(a, TOKEN_W);
   await connect(b, TOKEN_W2);
   const recent = daysAgo(a, 10);
-  const edge = daysAgo(a, 27);
-  const old = daysAgo(a, 40);
+  const edge = daysAgo(a, 62);
+  const old = daysAgo(a, 70);
   [recent, edge, old].forEach((d, i) => {
     const r = sampleRecord({ id: idFor(d, 'q' + i + 'zz'), date: d });
     server.putFile(`records/${d.slice(0, 7)}/${r.id}.json`, JSON.stringify(r, null, 2) + '\n');
@@ -541,6 +541,242 @@ test('app/ の公開ファイルに、鍵・氏名・学校名らしき文字列
     assert.ok(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(text), f + ' に鍵らしき文字列');
     assert.ok(!/(中学校|小学校|高校)/.test(text), f + ' に学校名らしき語');
   });
+});
+
+// --- 学習計画 ---
+function makePlan(dev, o) {
+  const p = plain(dev.ctx.newPlan());
+  p.name = o.name || '後期中間';
+  p.testDate = o.testDate || '2099-11-20';
+  p.items = o.items || [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3 }];
+  return p;
+}
+
+test('計画：plans/<id>.json に保存され、別の端末に取り込まれる。修正・削除も届く', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const p = makePlan(a, {});
+  a.ctx.savePlan(p);
+  eq(a.ctx.getSyncSummary().pending, 1);
+  await a.ctx.syncNow({ force: true });
+  const path = `plans/${p.id}.json`;
+  assert.ok(server.files.has(path), '計画のファイルができる');
+  eq(JSON.parse(server.files.get(path).text).items[0].amount, 40);
+  eq(a.ctx.pendingPlanIds(), []);
+
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.loadActivePlans().map((x) => x.id), [p.id]);
+
+  const edited = plain(b.ctx.findPlan(p.id));
+  edited.items[0].amount = 50;
+  edited.updatedAt = '2099-01-01T00:00:00+09:00';
+  b.ctx.putPlan(edited);
+  b.ctx.markPlanPending(edited);
+  await b.ctx.syncNow({ force: true });
+  await a.ctx.syncNow({ force: true });
+  eq(a.ctx.findPlan(p.id).items[0].amount, 50);
+
+  a.ctx.markPlanDeleted(p.id);
+  const del = plain(a.ctx.findPlan(p.id));
+  del.updatedAt = '2099-01-02T00:00:00+09:00';
+  a.ctx.putPlan(del);
+  await a.ctx.syncNow({ force: true });
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.loadActivePlans(), []);
+  assert.ok(server.files.has(path), '削除は印だけでファイルは残る');
+});
+
+test('計画：同じ計画を2台で直したら updatedAt が新しいほうが残る。形が違う計画は取り込まない', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const p = makePlan(a, {});
+  p.updatedAt = '2099-01-01T00:00:00+09:00';
+  a.ctx.putPlan(p);
+  a.ctx.markPlanPending(p);
+  await a.ctx.syncNow({ force: true });
+  await b.ctx.syncNow({ force: true });
+
+  const newer = plain(b.ctx.findPlan(p.id));
+  newer.name = '新しいほう';
+  newer.updatedAt = '2099-01-03T00:00:00+09:00';
+  b.ctx.putPlan(newer);
+  b.ctx.markPlanPending(newer);
+  await b.ctx.syncNow({ force: true });
+
+  const older = plain(a.ctx.findPlan(p.id));
+  older.name = '古いほう';
+  older.updatedAt = '2099-01-02T00:00:00+09:00';
+  a.ctx.putPlan(older);
+  a.ctx.markPlanPending(older);
+  const r = await a.ctx.syncNow({ force: true });
+  eq(a.ctx.findPlan(p.id).name, '新しいほう');
+  assert.ok(/そろえました/.test(r.notice));
+
+  const bad = makePlan(a, {});
+  bad.id = 'plan-20990101-000000-badx';
+  bad.months = 'x';
+  server.putFile(`plans/${bad.id}.json`, JSON.stringify(bad));
+  server.putFile('plans/README.md', 'x');
+  await b.ctx.syncNow({ force: true });
+  assert.ok(!b.ctx.findPlan(bad.id), '形が違う計画は取り込まない');
+});
+
+test('計画：鍵を消すと送信済みの計画の控えは消え、送信待ちの計画は残る', async () => {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  const sent = makePlan(dev, {});
+  dev.ctx.savePlan(sent);
+  await dev.ctx.syncNow({ force: true });
+  dev.offline = true;
+  const waiting = makePlan(dev, {});
+  waiting.id = 'plan-20990101-000000-wait';
+  dev.ctx.savePlan(waiting);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.disconnectSync();
+  eq(dev.ctx.loadPlans().map((x) => x.id), [waiting.id]);
+});
+
+// --- 運用中のデータとの互換（学習計画を足す前から使っている保存先・端末） ---
+// 運用中の保存先：records/ に複数の月の記録（削除済み・取り込み範囲外を含む）。plans/ はまだない
+function existingWorld() {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  const add = (n, tail, extra) => {
+    const date = daysAgo(dev, n);
+    const r = sampleRecord(Object.assign({ id: idFor(date, tail), date }, extra));
+    server.putFile(`records/${date.slice(0, 7)}/${r.id}.json`, JSON.stringify(r, null, 2) + '\n');
+    return r;
+  };
+  const recs = {
+    today: add(0, 'e0aa'),
+    recent: add(5, 'e1aa', { issues: [{ id: 'i-free', label: 'その他', text: '自由記述😀' }] }),
+    edited: add(20, 'e2aa', { createdAt: daysAgo(dev, 20) + 'T19:00:00+09:00', updatedAt: daysAgo(dev, 19) + 'T08:00:00+09:00' }),
+    deleted: add(30, 'e3aa', { deleted: true }),
+    older: add(45, 'e4aa'),
+    tooOld: add(90, 'e5aa'),
+  };
+  server.putFile('README.md', '# records\n');
+  return { server, recs };
+}
+
+function snapshot(server) {
+  return new Map([...server.files].map(([k, v]) => [k, v.text]));
+}
+
+function assertUnchanged(server, before, label) {
+  for (const [k, text] of before) assert.strictEqual(server.files.has(k) && server.files.get(k).text, text, `${label}：${k} が変わった`);
+}
+
+test('互換：運用中の保存先に新しい版でつないで何度同期しても、既存のファイルを1つも書き換えず、追加もしない', async () => {
+  const { server, recs } = existingWorld();
+  const before = snapshot(server);
+  const dev = makeDevice(server, 'Android');
+  await connect(dev, TOKEN_W);
+  await dev.ctx.syncNow({ force: true });
+  await dev.ctx.syncNow({ force: true });
+  await dev.ctx.syncNow({});
+  eq(server.requests('PUT').length, 0);
+  eq([...server.files.keys()].sort(), [...before.keys()].sort());
+  assertUnchanged(server, before, '同期のあと');
+
+  // 取り込み範囲（63日）の記録は、中身をそのまま取り込む（削除済みは印のまま）
+  const ids = dev.ctx.loadRecords().map((r) => r.id).sort();
+  eq(ids, [recs.today, recs.recent, recs.edited, recs.deleted, recs.older].map((r) => r.id).sort());
+  [recs.today, recs.recent, recs.edited, recs.deleted, recs.older].forEach((r) => eq(dev.ctx.findRecord(r.id), r));
+  assert.ok(!dev.ctx.loadActiveRecords().some((r) => r.id === recs.deleted.id), '削除済みは一覧に出ない');
+  eq(dev.ctx.loadPlans(), []);
+  eq(dev.ctx.getSyncSummary().pending, 0);
+  assert.strictEqual(dev.ctx.getSyncSummary().error, null, 'plans/ がなくてもエラーにならない');
+});
+
+test('互換：学習計画を作っても、書き込むのは plans/ だけ。既存の記録ファイルは変わらない', async () => {
+  const { server } = existingWorld();
+  const before = snapshot(server);
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  await dev.ctx.syncNow({ force: true });
+  const p = plain(dev.ctx.newPlan());
+  p.name = '後期中間';
+  p.items = [{ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3, lapMarks: [] }];
+  dev.ctx.savePlan(p);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.markPlanDeleted(p.id);
+  await dev.ctx.syncNow({ force: true });
+  const puts = server.requests('PUT').map((r) => decodeURIComponent(new URL(r.url).pathname));
+  assert.ok(puts.length >= 2 && puts.every((x) => x.includes('/contents/plans/')), puts.join('\n'));
+  assertUnchanged(server, before, '計画のあと');
+  eq([...server.files.keys()].filter((k) => !before.has(k)), [`plans/${p.id}.json`]);
+});
+
+test('互換：前の版で使っていた端末（端末内の記録・送信待ち・鍵・選択肢の変更）を新しい版で開いても、データは残り、送信待ちは元の形で送られる', async () => {
+  const { server, recs } = existingWorld();
+  const before = snapshot(server);
+  const helper = makeDevice(server, 'iPad');
+  const unsentDate = daysAgo(helper, 1);
+  const unsent = sampleRecord({ id: idFor(unsentDate, 'olda'), date: unsentDate, subject: '理科' });
+  const sentPath = `records/${recs.recent.date.slice(0, 7)}/${recs.recent.id}.json`;
+  const masters = { issue: [{ id: 'issue-uabc', label: '自分で足した課題', group: 'わからなかった', active: true }] };
+  const oldStore = {
+    study_records_v6: JSON.stringify([recs.recent, unsent]),
+    study_sync_meta_v1: JSON.stringify({ [recs.recent.id]: { path: sentPath, sha: server.files.get(sentPath).sha } }),
+    study_outbox_v1: JSON.stringify([unsent.id]),
+    study_sync_v1: JSON.stringify({ owner: OWNER, repo: REPO, token: TOKEN_W, mode: 'write', authFailed: false }),
+    study_sync_state_v1: JSON.stringify({ lastSyncAt: '2026-09-30T20:00:00+09:00' }),
+    study_device_v1: JSON.stringify({ id: 'olda', kind: 'iPad' }),
+    study_master_v1: JSON.stringify(masters),
+    study_features_v1: JSON.stringify({ admin: true }),
+  };
+  const dev = makeDevice(server, 'iPad', oldStore);
+  assert.strictEqual(dev.ctx.getLockState().locked, false, '鍵は入れ直さなくてよい');
+  eq(dev.ctx.getSyncSummary().pending, 1);
+  eq(dev.ctx.getMaster('issue'), masters.issue);
+  eq(dev.ctx.loadPlans(), []);
+
+  await dev.ctx.syncNow({ force: true });
+  const unsentPath = `records/${unsentDate.slice(0, 7)}/${unsent.id}.json`;
+  assert.strictEqual(server.files.get(unsentPath).text, JSON.stringify(unsent, null, 2) + '\n', '送信待ちは元の形のまま送られる');
+  eq(server.requests('PUT').length, 1);
+  assertUnchanged(server, before, '前の版の端末から同期したあと');
+  eq(dev.ctx.findRecord(unsent.id), unsent);
+  eq(dev.ctx.findRecord(recs.recent.id), recs.recent);
+  eq(dev.ctx.getSyncSummary().pending, 0);
+  eq(JSON.parse(dev.store.get('study_device_v1')), { id: 'olda', kind: 'iPad' });
+  eq(JSON.parse(dev.store.get('study_master_v1')), masters);
+});
+
+test('互換：鍵を消しても、前の版からの送信待ちの記録は残る（計画の有無に関係なく）', async () => {
+  const { server } = existingWorld();
+  const helper = makeDevice(server, 'iPad');
+  const d = daysAgo(helper, 1);
+  const unsent = sampleRecord({ id: idFor(d, 'oldb'), date: d });
+  const dev = makeDevice(server, 'iPad', {
+    study_records_v6: JSON.stringify([unsent]),
+    study_outbox_v1: JSON.stringify([unsent.id]),
+    study_sync_v1: JSON.stringify({ owner: OWNER, repo: REPO, token: TOKEN_W, mode: 'write', authFailed: false }),
+  });
+  dev.ctx.disconnectSync();
+  eq(dev.ctx.loadRecords(), [unsent]);
+  eq(dev.ctx.pendingIds(), [unsent.id]);
+});
+
+test('互換：plans/ に知らないファイル・壊れた計画があっても、記録の取り込みは止まらない', async () => {
+  const { server, recs } = existingWorld();
+  server.putFile('plans/README.md', 'x');
+  server.putFile('plans/plan-20990101-000000-brok.json', '{ broken');
+  const dev = makeDevice(server, 'Android');
+  await connect(dev, TOKEN_W);
+  await dev.ctx.syncNow({ force: true });
+  assert.ok(dev.ctx.findRecord(recs.today.id));
+  eq(dev.ctx.loadPlans(), []);
+  assert.strictEqual(dev.ctx.getSyncSummary().error, null);
+  eq(server.requests('PUT').length, 0);
 });
 
 (async () => {
