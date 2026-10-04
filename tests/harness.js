@@ -87,9 +87,10 @@ class FakeGitHub {
         return jsonResponse(200, { type: 'file', path: filePath, sha: file.sha, content: b64, encoding: 'base64' });
       }
       const prefix = filePath + '/';
-      const entries = [...this.files.entries()]
-        .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
-        .map(([p, f]) => ({ type: 'file', name: p.slice(prefix.length), path: p, sha: f.sha }));
+      const under = [...this.files.entries()].filter(([p]) => p.startsWith(prefix));
+      const entries = under.filter(([p]) => !p.slice(prefix.length).includes('/')).map(([p, f]) => ({ type: 'file', name: p.slice(prefix.length), path: p, sha: f.sha }));
+      const dirs = [...new Set(under.filter(([p]) => p.slice(prefix.length).includes('/')).map(([p]) => p.slice(prefix.length).split('/')[0]))];
+      dirs.forEach((name) => entries.push({ type: 'dir', name, path: prefix + name, sha: sha1(prefix + name) }));
       return entries.length ? jsonResponse(200, entries) : jsonResponse(404, { message: 'Not Found' });
     }
 

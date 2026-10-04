@@ -4,12 +4,23 @@ let reviewTab = 'summary'; // summary＝今週のまとめ／note＝ノート
 let reviewWeek = null; // まとめで見ている週の月曜
 let reviewFilter = 'open'; // open＝まだ／all＝すべて
 let reviewDoneView = 'band'; // まとめの表示：band＝時間（時間帯の表）／detail＝学習内容（記録ごと）／issue＝課題／plan＝計画（計画の進みと気づき）
+let reviewRangeFailed = false; // 表示する期間の記録を取れなかった
 
+// 開いたときは、その場で同期する
 function openReview(tab) {
   reviewTab = tab || 'summary';
   reviewWeek = startOfWeekStr(parseDate(todayStr()));
   renderReview();
   showScreen('screen-review');
+  kickSync();
+  loadRecordMonths().then((changed) => {
+    if (changed) refreshReview();
+  });
+}
+
+// 裏の取得が終わったときの描き直し
+function refreshReview() {
+  if (currentScreen === 'screen-review') renderReview();
 }
 
 function renderReview() {
@@ -32,9 +43,10 @@ function renderReview() {
 }
 
 // --- 今週のまとめ ---
-// さかのぼれるのは、いちばん古い記録の週まで
+// さかのぼれるのは、いちばん古い記録の週まで（保存先にだけある月も含む）
 function firstReviewWeek() {
   const dates = loadActiveRecords().map((r) => r.date);
+  if (recordMonths.length) dates.push(recordMonths[0] + '-01');
   const today = todayStr();
   const first = dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : today;
   return startOfWeekStr(parseDate(first < today ? first : today));
@@ -43,6 +55,17 @@ function firstReviewWeek() {
 function moveReviewWeek(days) {
   reviewWeek = shiftDate(reviewWeek, days);
   renderReview();
+}
+
+// 表示に使う期間（前の週との比較。計画があれば開始日から）が取り込み範囲より前なら、保存先から取る
+function requestReviewRange(plan) {
+  const prevWeek = shiftDate(reviewWeek, -7);
+  const from = plan && plan.startDate < prevWeek ? plan.startDate : prevWeek;
+  pullRange(from, shiftDate(reviewWeek, 6)).then((r) => {
+    if (!r.fetched && r.failed === reviewRangeFailed) return;
+    reviewRangeFailed = r.failed;
+    refreshReview();
+  });
 }
 
 $('btn-review-prev').addEventListener('click', () => moveReviewWeek(-7));
@@ -65,8 +88,24 @@ function renderReviewSummary() {
 
   const body = $('review-summary-body');
   body.innerHTML = '';
+  const sync = getSyncSummary();
+  if (!sync.localTest && (reviewRangeFailed || sync.error)) body.appendChild(el('div', 'field-note', LOCAL_ONLY_NOTE));
+  renderWeekChange(body, thisWeek);
   renderDoneCard(body, summary, progress, insights);
-  body.appendChild(el('div', 'field-note review-talk', '話す順：①うまくいったこと ②困ったこと ③来週1つ変えるなら'));
+  requestReviewRange(plan);
+}
+
+// その週にがんばること（1行）。今週のまとめでは、押すと TOP と同じダイアログで変えられる
+function renderWeekChange(body, thisWeek) {
+  const change = changeInEffect(loadReviews(), reviewWeek);
+  const current = reviewWeek === thisWeek;
+  const canChoose = current && !isReadOnly();
+  if (!change && !canChoose) return;
+  const line = el(canChoose ? 'button' : 'div', 'review-change');
+  line.appendChild(el('span', 'review-change-label', current ? '今週がんばること' : 'この週にがんばること'));
+  line.appendChild(el('span', 'review-change-text' + (change ? '' : ' is-empty'), change ? changeText(change) : 'タップして決める'));
+  if (canChoose) line.addEventListener('click', openChangeDialog);
+  body.appendChild(line);
 }
 
 function subjectTag(subject, text) {
@@ -149,6 +188,12 @@ function renderDoneCard(body, summary, progress, insights) {
       renderReview();
     }
   );
+  // 気づきは「計画」に出すので、数をボタンに添える
+  if (insights.length) {
+    const badge = el('span', 'seg-badge', String(insights.length));
+    badge.setAttribute('aria-label', `ヒント${insights.length}件`);
+    sw.children[3].appendChild(badge);
+  }
   c.appendChild(sw);
   if (reviewDoneView === 'plan') {
     renderProgress(c, progress);

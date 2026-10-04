@@ -5,6 +5,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 let editingPlan = null;
 let viewingPlanId = null;
 let lapForm = null; // 「○周目が終わった」の入力中 { item, lap }
+let planRangeFailed = false; // 計画の開始日からの記録を取れなかった
 
 function svgEl(tag, attrs) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -238,8 +239,17 @@ $('btn-plan-save').addEventListener('click', () => {
 function openPlanResult(id) {
   viewingPlanId = id;
   lapForm = null;
+  planRangeFailed = false;
   renderPlanResult();
   showScreen('screen-plan-result');
+  // 計画の開始日が取り込み範囲より前なら、開始日からの記録を保存先から取る
+  const plan = findPlan(id);
+  if (!plan) return;
+  pullRange(plan.startDate, plan.testDate).then((r) => {
+    if (viewingPlanId !== id || (!r.fetched && !r.failed)) return;
+    planRangeFailed = r.failed;
+    if (currentScreen === 'screen-plan-result' && !lapForm) renderPlanResult();
+  });
 }
 
 $('btn-plan-edit').addEventListener('click', () => {
@@ -287,6 +297,7 @@ function renderPlanResult() {
   const today = todayStr();
   const result = computePlan(plan, loadActiveRecords(), today);
   $('plan-result-title').textContent = plan.name;
+  if (planRangeFailed) body.appendChild(el('div', 'field-note', LOCAL_ONLY_NOTE));
 
   renderPlanStatus(body, result, today);
   renderTimeline(body, result, today);

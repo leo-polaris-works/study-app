@@ -9,6 +9,7 @@ const PUT_RETRY_MAX = 3;
 const FETCH_PARALLEL = 4;
 const RECORD_FILE_PATTERN = /^(\d{8})-\d{6}-[a-z0-9]+\.json$/;
 const PLAN_FILE_PATTERN = /^plan-\d{8}-\d{6}-[a-z0-9]+\.json$/;
+const REVIEW_FILE_PATTERN = /^review-\d{8}\.json$/;
 
 let syncSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -112,7 +113,7 @@ function getSyncSummary() {
     locked: lock.locked,
     lockReason: lock.reason,
     mode: cfg ? cfg.mode : null,
-    pending: pendingIds().length + pendingPlanIds().length,
+    pending: pendingIds().length + pendingPlanIds().length + pendingReviewIds().length,
     running: syncState.running,
     error: syncState.error,
     notice: syncState.notice,
@@ -164,6 +165,8 @@ function disconnectSync() {
   syncState.error = null;
   syncState.notice = '';
   syncState.lastPullAt = 0;
+  rangePulledAt = {};
+  recordMonths = [];
   notifySync();
 }
 
@@ -177,10 +180,11 @@ function serializeRecord(record) {
   return JSON.stringify(record, null, 2) + '\n';
 }
 
-// 記録と計画は同じ仕組みで送受信する
+// 記録・計画・振り返りは同じ仕組みで送受信する
 const DOC_KINDS = {
   record: { find: (id) => findRecord(id), apply: (d, p, sha) => applyRemoteRecord(d, p, sha), valid: (d) => isValidRecord(d), path: (d) => defaultRecordPath(d), pending: () => pendingIds(), done: (id) => clearPending(id), label: (d, sha) => (d.deleted ? '削除' : sha ? '修正' : '記録') },
   plan: { find: (id) => findPlan(id), apply: (d, p, sha) => applyRemotePlan(d, p, sha), valid: (d) => isValidPlan(d), path: (d) => defaultPlanPath(d), pending: () => pendingPlanIds(), done: (id) => clearPendingPlan(id), label: (d) => (d.deleted ? '計画の削除' : '計画') },
+  review: { find: (id) => findReview(id), apply: (d, p, sha) => applyRemoteReview(d, p, sha), valid: (d) => isValidReview(d), path: (d) => defaultReviewPath(d), pending: () => pendingReviewIds(), done: (id) => clearPendingReview(id), label: () => 'がんばること' },
 };
 
 function parseDocText(kind, text, expectedId) {
@@ -249,7 +253,7 @@ async function doFlush() {
   const result = { sent: 0, adopted: 0 };
   const cfg = loadSyncConfig();
   if (!cfg || cfg.mode === 'read' || getLockState().locked) return result;
-  for (const kind of ['record', 'plan']) {
+  for (const kind of ['record', 'plan', 'review']) {
     const k = DOC_KINDS[kind];
     for (const id of k.pending()) {
       const record = k.find(id);
@@ -289,50 +293,57 @@ async function mapLimit(items, limit, fn) {
   if (firstError) throw firstError;
 }
 
-async function doPull(cfg) {
-  await githubGetRepo(cfg); // 鍵・保存先が正しいかを先に確かめる（401・404 をここで見つける）
-
-  const todayStr = formatDate(new Date());
-  const cutoff = shiftDate(todayStr, -PULL_WINDOW_DAYS);
-  const cutoffKey = cutoff.replace(/-/g, '');
+function monthsBetween(from, to) {
   const months = [];
-  for (let d = cutoff; d <= todayStr; d = shiftDate(d, 1)) {
-    const m = d.slice(0, 7);
-    if (!months.includes(m)) months.push(m);
+  let m = from.slice(0, 7);
+  while (m <= to.slice(0, 7)) {
+    months.push(m);
+    const [y, mo] = m.split('-').map(Number);
+    m = mo === 12 ? `${y + 1}-01` : `${y}-${pad2(mo + 1)}`;
   }
+  return months;
+}
 
+// 月のフォルダの一覧と比べて、取りに行く記録を選ぶ。fromKey があれば、それより前に作った記録は除く
+async function listRecordTargets(cfg, months, fromKey) {
   const pending = pendingIds();
   const targets = [];
   for (const month of months) {
     const entries = await githubListDir(cfg, `records/${month}`);
     entries.forEach((entry) => {
       const m = RECORD_FILE_PATTERN.exec(entry.name);
-      if (!m || m[1] < cutoffKey) return;
+      if (!m || (fromKey && m[1] < fromKey)) return;
       const id = entry.name.slice(0, -'.json'.length);
       if (pending.includes(id)) return; // 端末側の変更が送信待ち。送るときに新旧を比べる
       if (findRecord(id) && getMeta(id).sha === entry.sha) return; // 変わっていない
-      targets.push({ id, path: entry.path, listedSha: entry.sha });
+      targets.push({ id, path: entry.path, kind: 'record' });
     });
   }
+  return targets;
+}
 
-  // 計画は数が少ないので、すべて見る
-  const pendingPlans = pendingPlanIds();
-  const planEntries = await githubListDir(cfg, 'plans');
-  planEntries.forEach((entry) => {
-    if (!PLAN_FILE_PATTERN.test(entry.name)) return;
+// 計画・振り返りは数が少ないので、すべて見る
+async function listDocTargets(cfg, kind, dir, pattern) {
+  const k = DOC_KINDS[kind];
+  const pending = k.pending();
+  const targets = [];
+  (await githubListDir(cfg, dir)).forEach((entry) => {
+    if (!pattern.test(entry.name)) return;
     const id = entry.name.slice(0, -'.json'.length);
-    if (pendingPlans.includes(id)) return;
-    if (findPlan(id) && getMeta(id).sha === entry.sha) return;
-    targets.push({ id, path: entry.path, listedSha: entry.sha, kind: 'plan' });
+    if (pending.includes(id)) return;
+    if (k.find(id) && getMeta(id).sha === entry.sha) return;
+    targets.push({ id, path: entry.path, kind });
   });
+  return targets;
+}
 
+async function fetchTargets(cfg, targets) {
   const result = { fetched: 0, invalid: 0 };
   await mapLimit(targets, FETCH_PARALLEL, async (t) => {
-    const kind = t.kind || 'record';
-    const k = DOC_KINDS[kind];
+    const k = DOC_KINDS[t.kind];
     const file = await githubGetFile(cfg, t.path);
     if (!file) return;
-    const remote = parseDocText(kind, file.text, t.id);
+    const remote = parseDocText(t.kind, file.text, t.id);
     if (!remote) {
       result.invalid++;
       return;
@@ -348,16 +359,71 @@ async function doPull(cfg) {
   return result;
 }
 
+async function doPull(cfg) {
+  await githubGetRepo(cfg); // 鍵・保存先が正しいかを先に確かめる（401・404 をここで見つける）
+
+  const todayStr = formatDate(new Date());
+  const cutoff = shiftDate(todayStr, -PULL_WINDOW_DAYS);
+  const targets = (await listRecordTargets(cfg, monthsBetween(cutoff, todayStr), cutoff.replace(/-/g, '')))
+    .concat(await listDocTargets(cfg, 'plan', 'plans', PLAN_FILE_PATTERN))
+    .concat(await listDocTargets(cfg, 'review', 'reviews', REVIEW_FILE_PATTERN));
+  return fetchTargets(cfg, targets);
+}
+
+// --- 期間を指定して取り込む（取り込み範囲より前の記録。振り返り・学習計画の結果で使う） ---
+let rangePulledAt = {}; // 月 → 最後に一覧を見た時刻
+let recordMonths = []; // 保存先にある月のフォルダ（古い順）
+
+// from〜to の月のフォルダを取る。戻り値の failed は、取れなかった（端末にある記録で表示する）
+async function pullRange(from, to) {
+  const result = { fetched: 0, failed: false };
+  const cfg = loadSyncConfig();
+  if (LOCAL_TEST || !cfg || getLockState().locked) return result;
+  const todayStr = formatDate(new Date());
+  if (from >= shiftDate(todayStr, -PULL_WINDOW_DAYS)) return result; // ふだんの取り込みの範囲
+  const months = monthsBetween(from, to < todayStr ? to : todayStr).filter((m) => Date.now() - (rangePulledAt[m] || 0) >= PULL_INTERVAL_MS);
+  if (!months.length) return result;
+  try {
+    result.fetched = (await fetchTargets(cfg, await listRecordTargets(cfg, months, null))).fetched;
+    months.forEach((m) => (rangePulledAt[m] = Date.now()));
+  } catch (e) {
+    result.failed = true;
+  }
+  return result;
+}
+
+// 保存先にある月を調べる（振り返りでさかのぼれる範囲に使う）。変わったら true
+async function loadRecordMonths() {
+  const cfg = loadSyncConfig();
+  if (LOCAL_TEST || !cfg || getLockState().locked) return false;
+  try {
+    const months = (await githubListDir(cfg, 'records', 'dir')).map((x) => x.name).filter((n) => /^\d{4}-\d{2}$/.test(n)).sort();
+    const changed = months.join() !== recordMonths.join();
+    recordMonths = months;
+    return changed;
+  } catch (e) {
+    return false;
+  }
+}
+
 // --- 送って・取り込む ---
 let syncPromise = null;
 
+let syncAgain = false; // 同期中に force で頼まれた（終わってからもう一度行う）
+
 // force：取り込みの間隔（60秒）を無視する（起動時・登録直後・手動）
 function syncNow(opts) {
-  if (!syncPromise) {
-    syncPromise = doSync(opts || {}).finally(() => {
-      syncPromise = null;
-    });
+  if (syncPromise) {
+    if (opts && opts.force) syncAgain = true;
+    return syncPromise;
   }
+  syncPromise = doSync(opts || {}).finally(() => {
+    syncPromise = null;
+    if (syncAgain) {
+      syncAgain = false;
+      syncNow({ force: true }).catch(() => {});
+    }
+  });
   return syncPromise;
 }
 

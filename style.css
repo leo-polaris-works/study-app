@@ -1349,11 +1349,6 @@ h2 {
   margin-right: 6px;
 }
 
-.review-talk {
-  text-align: center;
-  margin: 4px 0 12px;
-}
-
 .note-subject {
   font-size: 15px;
   margin: 18px 0 6px;
@@ -1393,4 +1388,123 @@ h2 {
 .note-done {
   font-size: 13px;
   color: var(--color-primary);
+}
+
+/* 今週がんばること（TOP・振り返りの1行・ダイアログ） */
+.top-change,
+.review-change {
+  display: block;
+  position: relative;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-good-bg);
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 30px 10px 14px;
+  margin: 0 0 14px;
+}
+
+.review-change {
+  margin-bottom: 10px;
+}
+
+button.top-change:not(:disabled),
+button.review-change {
+  cursor: pointer;
+}
+
+button.top-change:not(:disabled)::after,
+button.review-change::after {
+  content: "›";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: var(--color-good);
+}
+
+.top-change-label,
+.review-change-label {
+  display: block;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--color-good);
+}
+
+.top-change-text,
+.review-change-text {
+  display: block;
+  font-size: 16px;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+.top-change-text.is-empty,
+.review-change-text.is-empty {
+  font-weight: normal;
+  color: var(--color-muted);
+}
+
+.seg-badge {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: bold;
+  background: var(--color-good);
+  color: #fff;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 4px 14px 12px;
+}
+
+.dialog .review-head {
+  align-items: center;
+}
+
+.change-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.change-list .chip {
+  text-align: left;
+  border-radius: 10px;
+}
+
+.change-free {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+
+.change-free .change-input {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
 }

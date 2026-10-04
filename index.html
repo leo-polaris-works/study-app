@@ -16,6 +16,8 @@
 
   <button class="sync-line" id="sync-line" type="button"></button>
 
+  <button class="top-change" id="top-change" type="button" hidden></button>
+
   <div class="week-card">
     <h2>今週</h2>
     <div class="week-numbers">
@@ -168,6 +170,22 @@
     <button class="btn btn-big btn-danger" id="btn-sync-disconnect">鍵を消す</button>
   </div>
 </section>
+
+<!-- 今週がんばること（TOP・振り返りから開く） -->
+<div class="dialog-backdrop" id="change-dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="change-dialog-title">
+    <div class="review-head">
+      <h3 class="plan-heading" id="change-dialog-title">今週がんばること</h3>
+      <button class="btn btn-small" id="btn-change-close" type="button">閉じる</button>
+    </div>
+    <div class="change-list" id="change-list"></div>
+    <div class="change-free">
+      <input class="plan-input change-input" id="change-input" type="text" autocomplete="off" aria-label="自分で書く" />
+      <button class="btn btn-small" id="btn-change-free" type="button">決める</button>
+    </div>
+    <button class="btn btn-small btn-link" id="btn-change-clear" type="button">取り消す</button>
+  </div>
+</div>
 
 <script src="config.js"></script>
 <script src="master.js"></script>
