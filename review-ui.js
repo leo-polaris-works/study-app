@@ -1,6 +1,6 @@
-// 振り返りの画面：今週のまとめ・わからなかったことノート。計算は review.js・plan.js。
+// 振り返りの画面：今週のまとめ・わからなかったことノート。計算は review.js・plan.js。くわしく見るは review-detail-ui.js。
 
-let reviewTab = 'summary'; // summary＝今週のまとめ／note＝ノート
+let reviewTab = 'summary'; // summary＝今週のまとめ／detail＝くわしく見る／note＝ノート
 let reviewWeek = null; // まとめで見ている週の月曜
 let reviewFilter = 'open'; // open＝まだ／all＝すべて
 let reviewDoneView = 'band'; // まとめの表示：band＝時間（時間帯の表）／detail＝学習内容（記録ごと）／issue＝課題／plan＝計画（計画の進みと気づき）
@@ -10,6 +10,7 @@ let reviewRangeFailed = false; // 表示する期間の記録を取れなかっ�
 function openReview(tab) {
   reviewTab = tab || 'summary';
   reviewWeek = startOfWeekStr(parseDate(todayStr()));
+  resetReviewDetail();
   renderReview();
   showScreen('screen-review');
   kickSync();
@@ -28,6 +29,7 @@ function renderReview() {
     $('review-tabs'),
     [
       ['summary', '今週のまとめ'],
+      ['detail', 'くわしく見る'],
       ['note', 'ノート'],
     ],
     reviewTab,
@@ -37,19 +39,25 @@ function renderReview() {
     }
   );
   $('review-panel-summary').hidden = reviewTab !== 'summary';
+  $('review-panel-detail').hidden = reviewTab !== 'detail';
   $('review-panel-note').hidden = reviewTab !== 'note';
   if (reviewTab === 'summary') renderReviewSummary();
+  else if (reviewTab === 'detail') renderReviewDetail();
   else renderReviewNote();
 }
 
 // --- 今週のまとめ ---
-// さかのぼれるのは、いちばん古い記録の週まで（保存先にだけある月も含む）
-function firstReviewWeek() {
+// さかのぼれるのは、いちばん古い記録まで（保存先にだけある月も含む）
+function firstReviewDate() {
   const dates = loadActiveRecords().map((r) => r.date);
   if (recordMonths.length) dates.push(recordMonths[0] + '-01');
   const today = todayStr();
   const first = dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : today;
-  return startOfWeekStr(parseDate(first < today ? first : today));
+  return first < today ? first : today;
+}
+
+function firstReviewWeek() {
+  return startOfWeekStr(parseDate(firstReviewDate()));
 }
 
 function moveReviewWeek(days) {
@@ -57,11 +65,9 @@ function moveReviewWeek(days) {
   renderReview();
 }
 
-// 表示に使う期間（前の週との比較。計画があれば開始日から）が取り込み範囲より前なら、保存先から取る
-function requestReviewRange(plan) {
-  const prevWeek = shiftDate(reviewWeek, -7);
-  const from = plan && plan.startDate < prevWeek ? plan.startDate : prevWeek;
-  pullRange(from, shiftDate(reviewWeek, 6)).then((r) => {
+// 表示に使う期間（前の期間との比較。計画があれば開始日から）が取り込み範囲より前なら、保存先から取る
+function requestReviewRange(from, to, plan) {
+  pullRange(plan && plan.startDate < from ? plan.startDate : from, to).then((r) => {
     if (!r.fetched && r.failed === reviewRangeFailed) return;
     reviewRangeFailed = r.failed;
     refreshReview();
@@ -92,7 +98,7 @@ function renderReviewSummary() {
   if (!sync.localTest && (reviewRangeFailed || sync.error)) body.appendChild(el('div', 'field-note', LOCAL_ONLY_NOTE));
   renderWeekChange(body, thisWeek);
   renderDoneCard(body, summary, progress, insights);
-  requestReviewRange(plan);
+  requestReviewRange(shiftDate(reviewWeek, -7), weekEnd, plan);
 }
 
 // その週にがんばること（1行）。今週のまとめでは、押すと TOP と同じダイアログで変えられる
@@ -136,7 +142,22 @@ function renderBandGrid(box, summary) {
   box.appendChild(el('div', 'field-note', `数字は分。${SUBJECTS[0].charAt(0)}15＝${SUBJECTS[0]}を15分`));
 }
 
-// 曜日ごとの縦並び：曜日・合計の右に、記録ごとに3行（やったこと・時間・正答率／学習内容／量）
+// 記録1件の3行（やったこと・時間・正答率／学習内容／量）
+function recordLines(r) {
+  const item = el('div', 'day-record');
+  const top = el('div', 'day-item');
+  top.appendChild(subjectTag(r.subject, r.subject));
+  top.appendChild(el('span', 'day-item-name', r.activity.label));
+  top.appendChild(el('span', 'day-item-value', formatMinutes(r.totalMinutes)));
+  if (r.accuracy) top.appendChild(el('span', 'day-item-accuracy', r.accuracy.label));
+  item.appendChild(top);
+  item.appendChild(el('div', 'day-record-sub', r.fields.map((f) => `${f.label}${formatMinutes(f.minutes)}`).join('・')));
+  const amounts = r.materials.map((m) => (m.amount ? `${m.label} ${m.amount.value}${m.amount.unit}` : m.label)).join('・');
+  if (amounts) item.appendChild(el('div', 'day-record-sub day-record-amount', amounts));
+  return item;
+}
+
+// 曜日ごとの縦並び：曜日・合計の右に、記録ごとに3行
 function renderDayList(box, summary) {
   const list = el('div', 'day-list');
   summary.days.forEach((d) => {
@@ -146,19 +167,7 @@ function renderDayList(box, summary) {
     if (!d.future) head.appendChild(el('div', 'day-row-total', d.records.length ? formatMinutes(d.minutes) : '記録なし'));
     row.appendChild(head);
     const items = el('div', 'day-row-items');
-    d.records.forEach((r) => {
-      const item = el('div', 'day-record');
-      const top = el('div', 'day-item');
-      top.appendChild(subjectTag(r.subject, r.subject));
-      top.appendChild(el('span', 'day-item-name', r.activity.label));
-      top.appendChild(el('span', 'day-item-value', formatMinutes(r.totalMinutes)));
-      if (r.accuracy) top.appendChild(el('span', 'day-item-accuracy', r.accuracy.label));
-      item.appendChild(top);
-      item.appendChild(el('div', 'day-record-sub', r.fields.map((f) => `${f.label}${formatMinutes(f.minutes)}`).join('・')));
-      const amounts = r.materials.map((m) => (m.amount ? `${m.label} ${m.amount.value}${m.amount.unit}` : m.label)).join('・');
-      if (amounts) item.appendChild(el('div', 'day-record-sub day-record-amount', amounts));
-      items.appendChild(item);
-    });
+    d.records.forEach((r) => items.appendChild(recordLines(r)));
     row.appendChild(items);
     list.appendChild(row);
   });

@@ -243,6 +243,196 @@ test('がんばること：決めた1つは、変えるまで次の週にも続�
   assert.deepStrictEqual(at([review('2026-09-21', fixed), review(WEEK, free, true)], WEEK), fixed, '削除の印がついたファイルは見ない');
 });
 
+test('くわしく見る：期間の切り方（週は月曜から・月・テストまで・日）と、前後への移動', () => {
+  const range = (kind, anchor, plan) => plain(ctx.detailRange(kind, anchor, plan));
+  assert.deepStrictEqual(range('week', '2026-10-08'), { kind: 'week', from: WEEK, to: SUN, prev: { from: '2026-09-28', to: '2026-10-04' } });
+  assert.strictEqual(range('week', SUN).from, WEEK, '日曜は、その週の月曜から');
+  assert.deepStrictEqual(range('month', '2026-10-08'), { kind: 'month', from: '2026-10-01', to: '2026-10-31', prev: { from: '2026-09-01', to: '2026-09-30' } });
+  assert.deepStrictEqual(range('month', '2027-01-15').prev, { from: '2026-12-01', to: '2026-12-31' });
+  assert.strictEqual(range('month', '2028-02-10').to, '2028-02-29');
+  assert.deepStrictEqual(range('day', '2026-10-08'), { kind: 'day', from: '2026-10-08', to: '2026-10-08', prev: null });
+  assert.deepStrictEqual(range('test', '2026-10-08', monthPlan()), { kind: 'test', from: '2026-10-01', to: '2026-10-31', prev: null }, '計画の開始日〜テスト日');
+
+  const move = (kind, anchor, dir) => ctx.shiftDetailAnchor(ctx.detailRange(kind, anchor), dir);
+  assert.strictEqual(move('day', '2026-10-01', -1), '2026-09-30');
+  assert.strictEqual(move('week', '2026-10-08', 1), '2026-10-12');
+  assert.strictEqual(move('week', '2026-10-08', -1), '2026-09-28');
+  assert.strictEqual(move('month', '2026-10-31', 1), '2026-11-01');
+  assert.strictEqual(move('month', '2026-03-31', -1), '2026-02-01');
+});
+
+test('くわしく見る：推移グラフの棒は、週＝日ごと7本、月・テストまで＝週ごと（月曜はじまり。期間の端で切る）', () => {
+  const recs = [
+    rec({ date: '2026-09-30', minutes: 99 }), // 前の月
+    rec({ date: '2026-10-01', minutes: 30 }),
+    rec({ date: '2026-10-04', minutes: 20, subject: '英語' }),
+    rec({ date: '2026-10-05', minutes: 40 }),
+    rec({ date: '2026-10-31', minutes: 10, subject: '理科' }),
+  ];
+  const week = ctx.trendBuckets(recs, ctx.detailRange('week', '2026-10-01'), '2026-10-02');
+  assert.deepStrictEqual(plain(week.map((b) => b.minutes)), [0, 0, 99, 30, 0, 0, 20]);
+  assert.deepStrictEqual(plain(week.map((b) => b.future)), [false, false, false, false, false, true, true]);
+  assert.deepStrictEqual(plain(week.map((b) => b.current)), [false, false, false, false, true, false, false]);
+
+  const month = ctx.trendBuckets(recs, ctx.detailRange('month', '2026-10-08'), '2026-10-08');
+  assert.deepStrictEqual(
+    plain(month.map((b) => [b.from, b.to])),
+    [
+      ['2026-10-01', '2026-10-04'],
+      ['2026-10-05', '2026-10-11'],
+      ['2026-10-12', '2026-10-18'],
+      ['2026-10-19', '2026-10-25'],
+      ['2026-10-26', '2026-10-31'],
+    ]
+  );
+  assert.deepStrictEqual(plain(month.map((b) => b.minutes)), [50, 40, 0, 0, 10], '前の月の記録は入らない');
+  assert.strictEqual(month[0].bySubject['数学'], 30);
+  assert.strictEqual(month[0].bySubject['英語'], 20);
+  assert.deepStrictEqual(plain(month.map((b) => b.current)), [false, true, false, false, false]);
+  assert.deepStrictEqual(plain(month.map((b) => b.future)), [false, false, true, true, true]);
+
+  const plan = monthPlan({ startDate: '2026-09-30', testDate: '2026-10-07' });
+  const toTest = ctx.trendBuckets(recs, ctx.detailRange('test', null, plan), '2026-10-08');
+  assert.deepStrictEqual(plain(toTest.map((b) => [b.from, b.to, b.minutes])), [
+    ['2026-09-30', '2026-10-04', 149],
+    ['2026-10-05', '2026-10-07', 40],
+  ]);
+});
+
+test('くわしく見る（教科）：時間・記録数・正答率の目安（まん中の段階）と、やったことの内訳', () => {
+  const recs = [
+    rec({ date: '2026-10-05', minutes: 30, level: 2 }),
+    rec({ date: '2026-10-06', minutes: 20, level: 4 }),
+    rec({ date: '2026-10-07', minutes: 10, level: 3 }),
+    rec({ date: '2026-10-07', minutes: 15 }), // 正答率を測っていない
+    Object.assign(rec({ date: '2026-10-07', minutes: 40, subject: '英語', level: 5 }), { activity: { id: 'a-test', label: 'テスト対策' }, accuracy: { level: 5, label: 'ほぼ全問' } }),
+  ];
+  const rows = plain(ctx.detailBySubject(recs));
+  assert.deepStrictEqual(rows.map((x) => x.subject), ['国語', '数学', '英語', '理科', '社会']);
+  assert.deepStrictEqual(rows[1], { subject: '数学', minutes: 75, count: 4, accuracy: { level: 3, label: '〜70%' } });
+  assert.deepStrictEqual(rows[2].accuracy, { level: 5, label: 'ほぼ全問' });
+  assert.deepStrictEqual(rows[0], { subject: '国語', minutes: 0, count: 0, accuracy: null });
+  assert.strictEqual(ctx.detailBySubject(recs.slice(0, 2))[1].accuracy.level, 2, '2回なら低いほう');
+  assert.deepStrictEqual(plain(ctx.activityBreakdown(recs)), [
+    { id: 'a-hw', label: '宿題・提出物', minutes: 75 },
+    { id: 'a-test', label: 'テスト対策', minutes: 40 },
+  ]);
+});
+
+test('くわしく見る（学習内容）：教科ごとに、分野ごとの時間を多い順に', () => {
+  const recs = [
+    rec({ date: '2026-10-05', minutes: 20 }),
+    rec({ date: '2026-10-06', minutes: 50, field: 'f-ma-figure', fieldLabel: '図形' }),
+    rec({ date: '2026-10-07', minutes: 15 }),
+    rec({ date: '2026-10-07', minutes: 30, subject: '理科', field: 'f-sc-chem', fieldLabel: '化学' }),
+  ];
+  assert.deepStrictEqual(plain(ctx.detailByField(recs)), [
+    {
+      subject: '数学',
+      minutes: 85,
+      fields: [
+        { id: 'f-ma-figure', label: '図形', minutes: 50 },
+        { id: 'f-ma-calc', label: '計算', minutes: 35 },
+      ],
+    },
+    { subject: '理科', minutes: 30, fields: [{ id: 'f-sc-chem', label: '化学', minutes: 30 }] },
+  ]);
+});
+
+test('くわしく見る（量）：計画がなければ実績だけ（計画の欄は空）。単位が違うものは足さず、前の期間の量を添える', () => {
+  const recs = [
+    rec({ date: '2026-10-05', materials: [['m-ma-calc', '計算', 10, '問題'], ['m-ma-work', 'ワーク', 3, 'ページ']] }),
+    rec({ date: '2026-10-06', materials: [['m-ma-calc', '計算', 5, '問題'], ['m-ma-calc', '計算', 2, 'ページ']] }),
+    rec({ date: '2026-10-07', subject: '英語', materials: [['m-en-word', '単語', 30, '語'], ['m-en-other', 'その他', null, 'なし']] }),
+    rec({ date: '2026-09-29', materials: [['m-ma-calc', '計算', 8, '問題']] }), // 前の週
+  ];
+  const a = plain(ctx.detailAmounts(recs, ctx.detailRange('week', '2026-10-08'), null, '2026-10-08'));
+  assert.strictEqual(a.plan, null);
+  assert.deepStrictEqual(a.groups.map((g) => g.subject), ['数学', '英語']);
+  assert.deepStrictEqual(a.groups[0].items, [
+    { id: 'm-ma-work', subject: '数学', label: 'ワーク', unit: 'ページ', value: 3, prev: 0 },
+    { id: 'm-ma-calc', subject: '数学', label: '計算', unit: '問題', value: 15, prev: 8 },
+    { id: 'm-ma-calc', subject: '数学', label: '計算', unit: 'ページ', value: 2, prev: 0 },
+  ]);
+  assert.deepStrictEqual(a.groups[1].items, [{ id: 'm-en-word', subject: '英語', label: '単語', unit: '語', value: 30, prev: 0 }], '量のない項目（その他）は出さない');
+  assert.ok(a.groups.every((g) => g.items.every((x) => !('goal' in x) && !('laps' in x))));
+
+  // 月は前の月と比べる。日は比べない
+  const month = ctx.detailAmounts(recs, ctx.detailRange('month', '2026-10-08'), null, '2026-10-08');
+  assert.strictEqual(month.groups[0].items.find((x) => x.unit === '問題').prev, 8);
+  const day = ctx.detailAmounts(recs, ctx.detailRange('day', '2026-10-05'), null, '2026-10-08');
+  assert.ok(day.groups[0].items.every((x) => x.prev === null));
+});
+
+test('くわしく見る（量）：計画があれば、予定とやった量を並べる（週は今週のまとめと同じ予定。月は月末までの予定）。計画にない教材は実績だけ', () => {
+  const recs = [
+    rec({ date: '2026-10-02', subject: '理科', materials: [['m-sc-work', 'ワーク', 10, 'ページ']] }),
+    rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 25, 'ページ'], ['m-sc-redo', '解き直し', 6, '問題']] }),
+  ];
+  const plan = monthPlan();
+  const week = ctx.detailRange('week', '2026-10-08');
+  // 過ぎた週：1日10ページ×7日
+  const past = plain(ctx.detailAmounts(recs, week, plan, '2026-10-12'));
+  assert.strictEqual(past.plan.id, plan.id);
+  assert.deepStrictEqual(past.groups, [
+    {
+      subject: '理科',
+      items: [
+        { subject: '理科', id: 'm-sc-work', label: 'ワーク', unit: 'ページ', value: 25, goal: 70 },
+        { id: 'm-sc-redo', subject: '理科', label: '解き直し', unit: '問題', value: 6, prev: 0 },
+      ],
+    },
+  ]);
+  // 今週：今週のまとめの「今週の目標」と同じ
+  const now = ctx.detailAmounts(recs, week, plan, '2026-10-07').groups[0].items[0];
+  const target = ctx.planProgress(plan, recs, WEEK, '2026-10-07').targets[0];
+  assert.deepStrictEqual([now.goal, now.value], [target.goal, target.done]);
+
+  // 月：2か月の計画（9月50%・10月50%、300ページ）。9月に100ページ → 10月の予定は、月末までの300−100＝200
+  const two = monthPlan({ startDate: '2026-09-01', months: [{ month: '2026-09', percent: 50 }, { month: '2026-10', percent: 50 }] });
+  const recs2 = [
+    rec({ date: '2026-09-10', subject: '理科', materials: [['m-sc-work', 'ワーク', 100, 'ページ']] }),
+    rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 30, 'ページ']] }),
+  ];
+  const item = (anchor) => plain(ctx.detailAmounts(recs2, ctx.detailRange('month', anchor), two, '2026-10-12').groups[0].items[0]);
+  assert.deepStrictEqual([item('2026-10-12').value, item('2026-10-12').goal], [30, 200]);
+  assert.deepStrictEqual([item('2026-09-15').value, item('2026-09-15').goal], [100, 150]);
+});
+
+test('くわしく見る（量）：テストまでは、周ごとに予定とやった量を出す（「終わった」の周は済み）', () => {
+  const recs = [
+    rec({ date: '2026-10-02', subject: '理科', materials: [['m-sc-work', 'ワーク', 10, 'ページ']] }),
+    rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 25, 'ページ']] }),
+    rec({ date: '2026-10-08', subject: '理科', materials: [['m-sc-work', 'ワーク', 20, 'ページ']] }),
+    rec({ date: '2026-10-08', subject: '数学', materials: [['m-ma-calc', '計算', 12, '問題']] }),
+  ];
+  const item = (lapMarks) => ({ materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 300, laps: 2, lapMarks });
+  const amounts = (plan) => plain(ctx.detailAmounts(recs, ctx.detailRange('test', null, plan), plan, '2026-10-12'));
+
+  const a = amounts(monthPlan({ items: [item([])] }));
+  assert.deepStrictEqual(a.groups.map((g) => g.subject), ['数学', '理科']);
+  assert.deepStrictEqual(a.groups[1].items[0], {
+    subject: '理科',
+    id: 'm-sc-work',
+    label: 'ワーク',
+    unit: 'ページ',
+    value: 55,
+    total: 420,
+    laps: [
+      { lap: 1, amount: 300, done: 55, marked: false },
+      { lap: 2, amount: 120, done: 0, marked: false },
+    ],
+  });
+  assert.deepStrictEqual(a.groups[0].items, [{ id: 'm-ma-calc', subject: '数学', label: '計算', unit: '問題', value: 12, prev: null }], '計画にない教材は、やった量だけ');
+
+  const marked = amounts(monthPlan({ items: [item([{ lap: 1, date: '2026-10-06', nextAmount: 50 }])] })).groups[1].items[0];
+  assert.deepStrictEqual([marked.value, marked.total], [320, 350]);
+  assert.deepStrictEqual(marked.laps, [
+    { lap: 1, amount: 300, done: 300, marked: true },
+    { lap: 2, amount: 50, done: 20, marked: false },
+  ]);
+});
+
 (async () => {
   let failed = 0;
   for (const t of tests) {

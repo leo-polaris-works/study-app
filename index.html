@@ -46,7 +46,7 @@
   </div>
 </section>
 
-<!-- 振り返り：今週のまとめ・わからなかったことノート -->
+<!-- 振り返り：今週のまとめ・くわしく見る・わからなかったことノート -->
 <section id="screen-review" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
   <h2>振り返り</h2>
@@ -58,6 +58,15 @@
       <button class="btn btn-small" id="btn-review-next" type="button">›</button>
     </div>
     <div id="review-summary-body"></div>
+  </div>
+  <div id="review-panel-detail" hidden>
+    <div class="seg-group detail-period" id="detail-period"></div>
+    <div class="week-nav">
+      <button class="btn btn-small" id="btn-detail-prev" type="button">‹</button>
+      <span class="week-nav-label" id="detail-range-label"></span>
+      <button class="btn btn-small" id="btn-detail-next" type="button">›</button>
+    </div>
+    <div id="review-detail-body"></div>
   </div>
   <div id="review-panel-note" hidden>
     <h3 class="plan-heading">わからなかったことノート</h3>
@@ -199,5 +208,6 @@
 <script src="app.js"></script>
 <script src="plan-ui.js"></script>
 <script src="review-ui.js"></script>
+<script src="review-detail-ui.js"></script>
 </body>
 </html>
