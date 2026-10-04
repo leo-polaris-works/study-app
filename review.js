@@ -58,6 +58,20 @@ function issueSummary(list) {
   return { items, none };
 }
 
+// 教材ごとの量（単位が違うものは足さない）
+function materialTotals(list) {
+  const out = {};
+  list.forEach((r) =>
+    (r.materials || []).forEach((m) => {
+      if (!m.amount || !(m.amount.value > 0)) return;
+      const key = `${r.subject}|${m.id}|${m.amount.unit}`;
+      const x = (out[key] = out[key] || { id: m.id, subject: r.subject, label: m.label, unit: m.amount.unit, value: 0 });
+      x.value += m.amount.value;
+    })
+  );
+  return Object.values(out);
+}
+
 // --- 週のまとめ ---
 function summarizeWeek(records, weekStart, today) {
   const weekEnd = shiftDate(weekStart, 6);
@@ -74,16 +88,6 @@ function summarizeWeek(records, weekStart, today) {
     days.push({ date, studied: dates.has(date), future: date > today, records: mine, minutes: totalMinutesOf(mine) });
   }
   const morning = new Set(list.filter((r) => r.timeBand && r.timeBand.id === 'tb-morning').map((r) => r.date));
-  // 教材ごとの量（単位が違うものは足さない）
-  const materials = {};
-  list.forEach((r) =>
-    (r.materials || []).forEach((m) => {
-      if (!m.amount || !(m.amount.value > 0)) return;
-      const key = `${r.subject}|${m.id}|${m.amount.unit}`;
-      const x = (materials[key] = materials[key] || { id: m.id, subject: r.subject, label: m.label, unit: m.amount.unit, value: 0 });
-      x.value += m.amount.value;
-    })
-  );
   const resolved = records.filter((r) => !r.deleted && r.unclear && r.unclear.resolvedAt && r.unclear.resolvedAt >= weekStart && r.unclear.resolvedAt <= weekEnd).length;
   return {
     weekStart,
@@ -99,7 +103,7 @@ function summarizeWeek(records, weekStart, today) {
     bySubject: minutesBySubject(list),
     prevBySubject: minutesBySubject(prev),
     morningDays: morning.size,
-    materials: Object.values(materials),
+    materials: materialTotals(list),
     resolved,
   };
 }
@@ -131,14 +135,17 @@ function praiseLines(summary, progress) {
 }
 
 // --- 計画の進み ---
-// その週にかかる計画（テストが近いもの）
-function planForWeek(plans, weekStart) {
-  const weekEnd = shiftDate(weekStart, 6);
+// その期間にかかる計画（テストが近いもの）
+function planForRange(plans, from, to) {
   return (
     plans
-      .filter((p) => !p.deleted && p.startDate <= weekEnd && p.testDate > weekStart)
+      .filter((p) => !p.deleted && p.startDate <= to && p.testDate > from)
       .sort((a, b) => (a.testDate < b.testDate ? -1 : a.testDate > b.testDate ? 1 : 0))[0] || null
   );
+}
+
+function planForWeek(plans, weekStart) {
+  return planForRange(plans, weekStart, shiftDate(weekStart, 6));
 }
 
 // ある時点の、教材ごとの「やった量÷昨日までの予定」
@@ -318,4 +325,134 @@ function detectInsights(records, weekStart, today, progress) {
 function changeInEffect(reviews, weekStart) {
   const latest = reviews.filter((r) => !r.deleted && r.weekStart <= weekStart).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))[0];
   return latest ? latest.change : null;
+}
+
+// --- くわしく見る：期間（日／週／月／テストまで）×観点（教科／学習内容／量） ---
+// 期間の範囲。anchor はその期間に含まれる日。prev は比べる前の期間（週・月だけ）。「テストまで」は計画の開始日〜テスト日
+function detailRange(kind, anchor, plan) {
+  if (kind === 'test' && plan) return { kind, from: plan.startDate, to: plan.testDate, prev: null };
+  if (kind === 'month') {
+    const d = parseDate(anchor);
+    const edge = (month, day) => formatDate(new Date(d.getFullYear(), d.getMonth() + month, day));
+    return { kind, from: edge(0, 1), to: edge(1, 0), prev: { from: edge(-1, 1), to: edge(0, 0) } };
+  }
+  if (kind === 'week') {
+    const from = startOfWeekStr(parseDate(anchor));
+    return { kind, from, to: shiftDate(from, 6), prev: { from: shiftDate(from, -7), to: shiftDate(from, -1) } };
+  }
+  return { kind: 'day', from: anchor, to: anchor, prev: null };
+}
+
+// 前・次の期間に含まれる日（dir＝-1／1）
+function shiftDetailAnchor(range, dir) {
+  if (range.kind === 'month') return dir < 0 ? range.prev.from : shiftDate(range.to, 1);
+  return shiftDate(range.from, dir * (range.kind === 'week' ? 7 : 1));
+}
+
+// 推移グラフの棒：週は日ごと、月・テストまでは週ごと（月曜はじまり。期間の端で切る）
+function trendBuckets(records, range, today) {
+  const out = [];
+  let from = range.from;
+  while (from <= range.to) {
+    const weekEnd = shiftDate(startOfWeekStr(parseDate(from)), 6);
+    const to = range.kind === 'week' ? from : weekEnd < range.to ? weekEnd : range.to;
+    const list = recordsBetween(records, from, to);
+    out.push({ from, to, bySubject: minutesBySubject(list), minutes: totalMinutesOf(list), future: from > today, current: from <= today && today <= to });
+    from = shiftDate(to, 1);
+  }
+  return out;
+}
+
+// 観点「教科」：教科ごとの時間・記録数・正答率の目安（記録した回のまん中の段階）
+function detailBySubject(list) {
+  return SUBJECTS.map((subject) => {
+    const mine = list.filter((r) => r.subject === subject);
+    const levels = mine
+      .filter((r) => r.accuracy && typeof r.accuracy.level === 'number')
+      .map((r) => r.accuracy.level)
+      .sort((a, b) => a - b);
+    const level = levels.length ? levels[Math.floor((levels.length - 1) / 2)] : null;
+    return { subject, minutes: totalMinutesOf(mine), count: mine.length, accuracy: ACCURACY_LEVELS.find((a) => a.level === level) || null };
+  });
+}
+
+// やったことの内訳（時間の多い順）
+function activityBreakdown(list) {
+  const map = {};
+  list.forEach((r) => {
+    const x = (map[r.activity.id] = map[r.activity.id] || { id: r.activity.id, label: r.activity.label, minutes: 0 });
+    x.minutes += r.totalMinutes || 0;
+  });
+  return Object.values(map).sort((a, b) => b.minutes - a.minutes);
+}
+
+// 観点「学習内容」：教科ごとに、分野ごとの時間（多い順）
+function detailByField(list) {
+  return SUBJECTS.map((subject) => {
+    const map = {};
+    list
+      .filter((r) => r.subject === subject)
+      .forEach((r) =>
+        (r.fields || []).forEach((f) => {
+          const x = (map[f.id] = map[f.id] || { id: f.id, label: f.label, minutes: 0 });
+          x.minutes += f.minutes || 0;
+        })
+      );
+    const fields = Object.values(map).sort((a, b) => b.minutes - a.minutes);
+    return { subject, minutes: fields.reduce((a, f) => a + f.minutes, 0), fields };
+  }).filter((g) => g.fields.length);
+}
+
+// 観点「量」：教科ごとに、教材ごとの量（単位が違うものは足さない）。
+// 計画にある教材は、その期間の予定（goal）とやった量を並べる。テストまでは周ごと（laps）。
+// 週の予定は、今週のまとめと同じ（日ごとの予定の合計）。月の予定は、月末までの予定から、その月の前までにやった量を引く
+// （遅れを残りの日に分けた予定を足すと、遅れの分が重なるため）。
+// 計画にない教材は、やった量だけ。前の期間の量（prev）を添える
+function detailAmounts(records, range, plan, today) {
+  const rows = [];
+  const planned = new Set();
+  if (plan) {
+    // 過ぎた期間は、その期間の終わりの時点で見る
+    const asOf = today <= range.to ? today : range.kind === 'test' ? range.to : shiftDate(range.to, 1);
+    const result = computePlan(plan, records, asOf);
+    const base = (it) => ({ subject: it.subject, id: it.materialId, label: it.label, unit: it.unit });
+    if (range.kind === 'test') {
+      result.items.forEach((it) => {
+        const laps = it.lapsNow.map((l) => ({ lap: l.lap, amount: roundAmount(l.amount), done: Math.round(l.done), marked: l.marked }));
+        rows.push(Object.assign(base(it), { value: Math.round(it.doneNow), total: Math.round(it.total), laps }));
+      });
+    } else if (range.kind === 'month') {
+      const end = result.days.filter((d) => d.date <= range.to).pop();
+      const doneUntil = (it, date) => sumDone(doneLaps(it.lapList, it.byDate, date));
+      result.items.forEach((it) => {
+        if (!end || end.date < range.from) return;
+        const start = doneUntil(it, shiftDate(range.from, -1));
+        const goal = it.total * end.cum - start;
+        if (goal > 0.05) rows.push(Object.assign(base(it), { value: Math.round(doneUntil(it, range.to) - start), goal: roundAmount(goal) }));
+      });
+    } else {
+      sumEntries(result, range.from, range.to)
+        .filter((x) => x.amount > 0.05)
+        .forEach((x) => {
+          const it = result.items[x.item];
+          const done = Object.keys(it.byDate)
+            .filter((d) => d >= range.from && d <= range.to)
+            .reduce((a, d) => a + it.byDate[d], 0);
+          rows.push(Object.assign(base(it), { value: Math.round(done), goal: roundAmount(x.amount) }));
+        });
+    }
+    rows.forEach((x) => planned.add(x.id));
+  }
+  const before = range.prev ? materialTotals(recordsBetween(records, range.prev.from, range.prev.to)) : null;
+  const order = getMaster('material').map((m) => m.id);
+  const rank = (id) => (order.includes(id) ? order.indexOf(id) : order.length);
+  materialTotals(recordsBetween(records, range.from, range.to))
+    .filter((m) => !planned.has(m.id))
+    .sort((a, b) => rank(a.id) - rank(b.id))
+    .forEach((m) => {
+      const same = before && before.find((p) => p.subject === m.subject && p.id === m.id && p.unit === m.unit);
+      rows.push(Object.assign(m, { prev: before ? (same ? same.value : 0) : null }));
+    });
+  const groups = SUBJECTS.map((subject) => ({ subject, items: rows.filter((x) => x.subject === subject) })).filter((g) => g.items.length);
+  return { plan: plan || null, groups };
 }

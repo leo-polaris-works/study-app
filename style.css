@@ -1390,6 +1390,251 @@ h2 {
   color: var(--color-primary);
 }
 
+/* 振り返り：くわしく見る */
+.detail-period {
+  margin-bottom: 8px;
+}
+
+.detail-period .chip.seg {
+  padding: 8px 4px;
+  font-size: 14px;
+  min-height: 36px;
+}
+
+.detail-switch {
+  margin-top: 12px;
+}
+
+/* 教科の色（棒。タグより少し濃い） */
+.subj-fill-0 {
+  background: #e3a3c4;
+}
+
+.subj-fill-1 {
+  background: #7fb0e0;
+}
+
+.subj-fill-2 {
+  background: #a999e0;
+}
+
+.subj-fill-3 {
+  background: #74c4a0;
+}
+
+.subj-fill-4 {
+  background: #f0bb6a;
+}
+
+.trend {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.trend-col {
+  flex: 1 0 34px;
+  min-width: 0;
+  text-align: center;
+}
+
+.trend-value {
+  height: 14px;
+  font-size: 10px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.trend-box {
+  height: 110px;
+  display: flex;
+  flex-direction: column-reverse;
+  padding: 0 3px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.trend-seg {
+  flex: 0 0 auto;
+  border-top: 1px solid #fff;
+}
+
+.trend-seg:last-child {
+  border-radius: 3px 3px 0 0;
+}
+
+.trend-col.is-future .trend-box {
+  border-bottom-style: dashed;
+}
+
+.trend-label {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.trend-col.is-today .trend-label {
+  color: var(--color-text);
+  font-weight: bold;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.trend-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.trend-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.subj-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 2px;
+  font-size: 13px;
+}
+
+.subj-row .subj-tag {
+  font-size: 12px;
+}
+
+.subj-row-value {
+  font-weight: bold;
+}
+
+.subj-row-sub {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-left: 48px;
+}
+
+.act-band {
+  display: flex;
+  height: 14px;
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.act-band > div + div {
+  border-left: 1px solid #fff;
+}
+
+.act-0 {
+  background: #2b6cb0;
+}
+
+.act-1 {
+  background: #5a8fc8;
+}
+
+.act-2 {
+  background: #8fb3dc;
+}
+
+.act-3 {
+  background: #c3d6ec;
+}
+
+.act-4 {
+  background: #9aa5b1;
+}
+
+.act-5 {
+  background: #d0d5db;
+}
+
+.act-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin: 3px 0;
+}
+
+.act-row-name {
+  flex: 1;
+}
+
+.act-row-value {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.detail-subject {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+  font-size: 13px;
+}
+
+.detail-subject .subj-tag {
+  font-size: 12px;
+}
+
+.detail-subject-total {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 68px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  margin: 5px 0;
+}
+
+.field-row-value {
+  text-align: right;
+}
+
+.amount-row {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.amount-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.amount-sub {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.amount-sub.is-done {
+  color: var(--color-good);
+  font-weight: bold;
+}
+
+.day-card .day-record {
+  margin: 2px 0 4px;
+}
+
 /* 今週がんばること（TOP・振り返りの1行・ダイアログ） */
 .top-change,
 .review-change {

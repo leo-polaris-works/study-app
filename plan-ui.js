@@ -468,23 +468,29 @@ function renderLapControls(row, result, i) {
   row.appendChild(box);
 }
 
-// 教材ごとの進み具合：全体（範囲×周回）の中で、周回ごとに色の濃さを変える
+// 周回ごとの帯（全体の中で、周回ごとに色の濃さを変える）。laps は { lap, amount, done }
+function lapTrack(laps) {
+  const total = Math.max(laps.reduce((a, l) => a + l.amount, 0), 1e-9);
+  const track = el('div', 'lap-track');
+  laps.forEach((l) => {
+    const seg = el('div', `lap-seg lap-${Math.min(l.lap, 3)}`);
+    seg.style.width = `${(l.amount / total) * 100}%`;
+    const fill = el('div', 'lap-fill');
+    fill.style.width = `${Math.min(1, l.done / Math.max(l.amount, 1e-9)) * 100}%`;
+    seg.appendChild(fill);
+    track.appendChild(seg);
+  });
+  return track;
+}
+
+// 教材ごとの進み具合：全体（範囲×周回）
 function renderItemProgress(body, result) {
   const c = card(body, '教材ごとの進み具合');
   result.items.forEach((it, i) => {
     const laps = it.lapsNow;
     const row = el('div', 'plan-target');
     row.appendChild(el('div', 'plan-target-main', `${itemName(result, i)}　${Math.round(it.doneNow)} / ${Math.round(it.total)}${it.unit}`));
-    const track = el('div', 'lap-track');
-    laps.forEach((l) => {
-      const seg = el('div', `lap-seg lap-${Math.min(l.lap, 3)}`);
-      seg.style.width = `${(l.amount / Math.max(it.total, 1e-9)) * 100}%`;
-      const fill = el('div', 'lap-fill');
-      fill.style.width = `${(l.done / Math.max(l.amount, 1e-9)) * 100}%`;
-      seg.appendChild(fill);
-      track.appendChild(seg);
-    });
-    row.appendChild(track);
+    row.appendChild(lapTrack(laps));
     row.appendChild(el('div', 'plan-target-sub', laps.map((l) => `${l.lap}周目 ${roundAmount(l.amount)}${it.unit}${l.marked ? ' ✓' : ''}`).join('　')));
     renderLapControls(row, result, i);
     c.appendChild(row);
