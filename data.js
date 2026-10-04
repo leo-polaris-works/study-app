@@ -251,6 +251,7 @@ function pendingPlanIds() {
 }
 
 function markPlanPending(plan) {
+  if (plan.id === SAMPLE_PLAN_ID) return; // サンプルの計画は送らない
   if (!getMeta(plan.id).path) setMeta(plan.id, { path: defaultPlanPath(plan) });
   const ids = pendingPlanIds();
   if (!ids.includes(plan.id)) ids.push(plan.id);
@@ -378,15 +379,26 @@ function formatMinutes(min) {
   return m ? `${h}時間${m}分` : `${h}時間`;
 }
 
-// テスト・実機確認用のサンプルデータ（本番運用では使わない）
+// テスト・実機確認用のサンプルデータ（本番運用では使わない）。2週間分の記録と、端末内だけの計画（送らない）
+const SAMPLE_PLAN_ID = PLAN_PREFIX + SAMPLE_PREFIX + '0';
+
 function seedSampleData() {
   const today = formatDate(new Date());
   const device = getDevice();
+  const acc = (level) => ACCURACY_LEVELS.find((a) => a.level === level);
   const rows = [
-    { d: 0, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 25, fields: [['f-sc-chem', '化学', 15], ['f-sc-bio', '生物', 10]], materials: [['m-sc-work', 'ワーク', 5, 'ページ'], ['m-sc-redo', '解き直し', 8, '問題']], accuracy: { level: 3, label: '〜70%' }, issues: [['i-nounder', 'そもそも分からない'], ['i-forgot', '前のを忘れた']], unclear: 'ワーク p.12 問4、化学反応式の係数の決め方' },
-    { d: 0, band: ['tb-evening', '夕方'], subject: '数学', activity: ['a-hw', '宿題・提出物'], minutes: 50, fields: [['f-ma-calc', '計算', 20], ['f-ma-word', '文章題', 30]], materials: [['m-ma-hw', '宿題', 6, 'ページ']], accuracy: { level: 4, label: '〜90%' }, issues: [] },
+    { d: 0, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 25, fields: [['f-sc-chem', '化学', 15], ['f-sc-bio', '生物', 10]], materials: [['m-sc-work', 'ワーク', 5, 'ページ'], ['m-sc-redo', '解き直し', 8, '問題']], accuracy: acc(3), issues: [['i-nounder', 'そもそも分からない'], ['i-forgot', '前のを忘れた']], unclear: 'ワーク p.12 問4、化学反応式の係数の決め方' },
+    { d: 0, band: ['tb-evening', '夕方'], subject: '数学', activity: ['a-hw', '宿題・提出物'], minutes: 50, fields: [['f-ma-calc', '計算', 20], ['f-ma-word', '文章題', 30]], materials: [['m-ma-hw', '宿題', 6, 'ページ']], accuracy: acc(4), issues: [] },
     { d: -1, band: ['tb-morning', '朝'], subject: '英語', activity: ['a-review-week', '復習（今週の授業）'], minutes: 15, fields: [['f-en-word', '単語・熟語', 15]], materials: [['m-en-word', '単語', 30, '語']], accuracy: null, issues: [] },
-    { d: -2, band: ['tb-night', '夜'], subject: '社会', activity: ['a-review-past', '復習（先週以前）'], minutes: 25, fields: [['f-so-history', '歴史', 25]], materials: [['m-so-text', '教科書', 4, 'ページ']], accuracy: { level: 2, label: '〜50%' }, issues: [['i-again', 'また間違えた'], ['i-seeans', '見れば分かる']] },
+    { d: -1, band: ['tb-night', '夜'], subject: '数学', activity: ['a-review-week', '復習（今週の授業）'], minutes: 40, fields: [['f-ma-figure', '図形', 40]], materials: [['m-ma-work', 'ワーク', 4, 'ページ']], accuracy: acc(2), issues: [['i-again', 'また間違えた']] },
+    { d: -2, band: ['tb-night', '夜'], subject: '理科', activity: ['a-review-past', '復習（先週以前）'], minutes: 30, fields: [['f-sc-chem', '化学', 30]], materials: [['m-sc-work', 'ワーク', 3, 'ページ']], accuracy: acc(3), issues: [['i-before', '前の内容があやしい']], unclear: '化学変化と質量の計算', resolved: -1 },
+    { d: -3, band: ['tb-morning', '朝'], subject: '英語', activity: ['a-review-week', '復習（今週の授業）'], minutes: 15, fields: [['f-en-word', '単語・熟語', 15]], materials: [['m-en-word', '単語', 30, '語']], accuracy: null, issues: [] },
+    { d: -4, band: ['tb-night', '夜'], subject: '数学', activity: ['a-hw', '宿題・提出物'], minutes: 45, fields: [['f-ma-figure', '図形', 45]], materials: [['m-ma-hw', '宿題', 4, 'ページ']], accuracy: acc(2), issues: [['i-again', 'また間違えた']] },
+    { d: -6, band: ['tb-evening', '夕方'], subject: '国語', activity: ['a-hw', '宿題・提出物'], minutes: 30, fields: [['f-jp-kanji', '漢字', 30]], materials: [['m-jp-kanji', '漢字', 50, '字']], accuracy: acc(4), issues: [] },
+    { d: -8, band: ['tb-night', '夜'], subject: '数学', activity: ['a-test', 'テスト対策'], minutes: 40, fields: [['f-ma-figure', '図形', 40]], materials: [['m-ma-redo', '解き直し', 10, '問題']], accuracy: acc(2), issues: [] },
+    { d: -9, band: ['tb-night', '夜'], subject: '英語', activity: ['a-hw', '宿題・提出物'], minutes: 30, fields: [['f-en-grammar', '文法', 30]], materials: [['m-en-hw', '宿題', 3, 'ページ']], accuracy: acc(3), issues: [] },
+    { d: -10, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 40, fields: [['f-sc-chem', '化学', 40]], materials: [['m-sc-work', 'ワーク', 4, 'ページ']], accuracy: acc(3), issues: [] },
+    { d: -12, band: ['tb-evening', '夕方'], subject: '英語', activity: ['a-review-past', '復習（先週以前）'], minutes: 20, fields: [['f-en-word', '単語・熟語', 20]], materials: [['m-en-word', '単語', 40, '語']], accuracy: acc(4), issues: [] },
   ];
   const records = loadRecords();
   rows.forEach((r, i) => {
@@ -401,9 +413,9 @@ function seedSampleData() {
       activity: { id: r.activity[0], label: r.activity[1] },
       fields: r.fields.map((f) => ({ id: f[0], label: f[1], minutes: f[2] })),
       materials: r.materials.map((m) => ({ id: m[0], label: m[1], amount: { value: m[2], unit: m[3] } })),
-      accuracy: r.accuracy,
+      accuracy: r.accuracy || null,
       issues: r.issues.map((x) => ({ id: x[0], label: x[1] })),
-      ...(r.unclear ? { unclear: { text: r.unclear, resolvedAt: null } } : {}),
+      ...(r.unclear ? { unclear: { text: r.unclear, resolvedAt: r.resolved === undefined ? null : shiftDate(today, r.resolved) } } : {}),
       device,
       createdAt: now,
       updatedAt: now,
@@ -411,8 +423,32 @@ function seedSampleData() {
     });
   });
   writeRecords(records);
+
+  // 計画は端末内に置くだけ（送信待ちに入れない）
+  const start = shiftDate(today, -14);
+  const testDate = shiftDate(today, 28);
+  const now = localIso();
+  putPlan({
+    schemaVersion: SCHEMA_VERSION,
+    id: SAMPLE_PLAN_ID,
+    name: 'サンプルのテスト',
+    testDate,
+    startDate: start,
+    items: [
+      { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 60, laps: 3, lapMarks: [] },
+      { materialId: 'm-en-word', subject: '英語', label: '単語', unit: '語', amount: 120, laps: 3, lapMarks: [] },
+      { materialId: 'm-ma-work', subject: '数学', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3, lapMarks: [] },
+    ],
+    months: defaultPlanMonths(start, testDate),
+    firstAccuracy: PLAN_DEFAULTS.firstAccuracy,
+    device,
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
+  });
 }
 
 function clearSampleData() {
   writeRecords(loadRecords().filter((r) => !isSampleId(r.id)));
+  writePlans(loadPlans().filter((p) => p.id !== SAMPLE_PLAN_ID));
 }

@@ -44,13 +44,25 @@
   </div>
 </section>
 
-<!-- 振り返り：わからなかったことノート -->
+<!-- 振り返り：今週のまとめ・わからなかったことノート -->
 <section id="screen-review" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
-  <h2>わからなかったことノート</h2>
-  <div class="field-note" id="review-summary"></div>
-  <div class="seg-group" id="review-filter"></div>
-  <div id="review-list"></div>
+  <h2>振り返り</h2>
+  <div class="seg-group review-tabs" id="review-tabs"></div>
+  <div id="review-panel-summary">
+    <div class="week-nav">
+      <button class="btn btn-small" id="btn-review-prev" type="button">‹</button>
+      <span class="week-nav-label" id="review-week-label"></span>
+      <button class="btn btn-small" id="btn-review-next" type="button">›</button>
+    </div>
+    <div id="review-summary-body"></div>
+  </div>
+  <div id="review-panel-note" hidden>
+    <h3 class="plan-heading">わからなかったことノート</h3>
+    <div class="field-note" id="review-note-count"></div>
+    <div class="seg-group" id="review-filter"></div>
+    <div id="review-list"></div>
+  </div>
 </section>
 
 <!-- 学習計画：一覧 -->
@@ -161,6 +173,7 @@
 <script src="master.js"></script>
 <script src="data.js"></script>
 <script src="plan.js"></script>
+<script src="review.js"></script>
 <script src="github.js"></script>
 <script src="sync.js"></script>
 <script src="messages.js"></script>
