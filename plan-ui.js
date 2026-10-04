@@ -327,7 +327,9 @@ function renderTimeline(body, result, today) {
   const total = Math.max(1, daysUntil(start, end));
   const W = 320;
   const x = (d) => (Math.min(total, Math.max(0, daysUntil(start, d))) / total) * W;
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} 58`, class: 'plan-svg', role: 'img', 'aria-label': 'テストまでの流れ' });
+  // 端に近いラベルは、はみ出さないよう内側へ寄せる
+  const anchor = (px) => (px < 24 ? 'start' : px > W - 24 ? 'end' : 'middle');
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} 66`, class: 'plan-svg', role: 'img', 'aria-label': 'テストまでの流れ' });
   const max = Math.max(1, ...result.months.map((m) => m.percent / m.days));
   result.months.forEach((m) => {
     const x0 = x(m.from);
@@ -342,18 +344,19 @@ function renderTimeline(body, result, today) {
   if (d1 > start) {
     const dx = x(shiftDate(d1, 1));
     svg.appendChild(svgEl('line', { x1: dx, y1: 10, x2: dx, y2: 38, class: 'deadline-line' }));
-    const t = svgEl('text', { x: dx, y: 50, class: 'axis-label', 'text-anchor': 'middle' });
+    const t = svgEl('text', { x: dx, y: 50, class: 'axis-label', 'text-anchor': anchor(dx) });
     t.textContent = '1周目まで';
     svg.appendChild(t);
   }
   if (today >= start && today <= end) {
     const tx = x(today);
     svg.appendChild(svgEl('line', { x1: tx, y1: 8, x2: tx, y2: 40, class: 'today-line' }));
-    const t = svgEl('text', { x: tx, y: 9, class: 'axis-label', 'text-anchor': 'middle' });
+    const t = svgEl('text', { x: tx, y: 9, class: 'axis-label', 'text-anchor': anchor(tx) });
     t.textContent = '今日';
     svg.appendChild(t);
   }
-  const e = svgEl('text', { x: W, y: 56, class: 'axis-label', 'text-anchor': 'end' });
+  // テスト日は「1周目まで」と重ならないよう、下の段に置く
+  const e = svgEl('text', { x: W, y: 63, class: 'axis-label', 'text-anchor': 'end' });
   e.textContent = `テスト ${shortDate(end)}`;
   svg.appendChild(e);
   c.appendChild(svg);

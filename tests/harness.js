@@ -111,7 +111,7 @@ class FakeGitHub {
   }
 }
 
-const SCRIPT_ORDER = ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js'];
+const SCRIPT_ORDER = ['config.js', 'master.js', 'data.js', 'plan.js', 'review.js', 'github.js', 'sync.js'];
 
 // 端末1台ぶん。ctx.run(コード) で、スクリプト直下の const・let も読める
 // initialStore：スクリプトを読む前から端末に入っている保存データ（前の版で使っていた端末の再現）

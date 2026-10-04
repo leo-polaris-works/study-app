@@ -60,11 +60,8 @@ function isReadOnly() {
 }
 
 function renderTop() {
-  // 「見るだけ」の端末では、学習記録・振り返りのボタンを出さない
-  const writable = !isReadOnly();
-  ['menu-record', 'menu-review'].forEach((id) => {
-    $(id).hidden = !writable;
-  });
+  // 「見るだけ」の端末では、学習記録のボタンを出さない（振り返りは見られる。書き込む操作だけ出さない）
+  $('menu-record').hidden = isReadOnly();
   // 管理用（学習計画・学習記録設定）は、機能利用設定で「利用する」にした端末だけ出す
   const features = loadFeatures();
   $('menu-plan').hidden = !features.admin;

@@ -194,3 +194,32 @@ const PLAN_DEFAULTS = {
 };
 
 const PHASE_LABELS = { 1: '1周目', 2: '解き直し', 3: '仕上げ' };
+
+// 振り返りの気づきの判定。考え方は非公開側の設計文書にある
+const REVIEW_RULES = {
+  windowDays: 14, // つまずき・抜けを見る期間
+  minRecords: 3, // これより記録が少なければ、計画の遅れだけを見る
+  bigLagRatio: 0.6, // やった量÷予定がこれ未満なら、大きな遅れ
+  aheadRatio: 1.2, // これ以上なら、予定より進んでいる
+  lowLevel: 2, // 正答率の段階がこれ以下を「低い」とする（〜50%）
+  spinMinutes: 60, // 同じ分野にこれ以上かけても正答率が低いままなら、空回り
+  spinRecords: 2,
+  repeatIssue: 3, // 同じ課題がこの回数以上
+  gapRecords: 5, // 期間の記録がこれ以上あるのに0件の教科を「抜け」とする
+  dropRatio: 0.5, // 今週の合計が先週のこの割合未満なら、量の減少
+  dropMinMinutes: 120, // 先週がこれ以上のときだけ、量の減少を見る
+  increaseMinutes: 15, // 先週よりこれ以上ふえた教科を、できたことに出す
+  maxInsights: 3,
+  maxPraise: 3,
+};
+
+// 来週変える1つ（決まった候補）
+const CHANGE_CANDIDATES = [
+  { id: 'c-redo-next', label: '×を次の日に解き直す' },
+  { id: 'c-recall', label: '前の週の内容を思い出してから始める' },
+  { id: 'c-morning-word', label: '朝に英単語を10分' },
+  { id: 'c-scso-twice', label: '理社を週2回入れる' },
+  { id: 'c-schedule', label: '勉強する曜日と時間を決める' },
+  { id: 'c-phone', label: 'スマホを別の部屋に置く' },
+  { id: 'c-plan', label: '計画を見直す（割合・周回）' },
+];

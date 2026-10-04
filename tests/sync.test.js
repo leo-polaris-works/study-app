@@ -494,8 +494,13 @@ test('サンプルデータ（sample-）は送らない。モックの古い保�
   dev.ctx.seedSampleData();
   assert.ok(dev.ctx.recentRecords().length > 0);
   assert.strictEqual(dev.ctx.pendingIds().length, 0);
+  assert.ok(dev.ctx.findPlan(dev.ctx.run('SAMPLE_PLAN_ID')), 'サンプルの計画は端末内にある');
+  dev.ctx.savePlan(dev.ctx.findPlan(dev.ctx.run('SAMPLE_PLAN_ID'))); // 直しても送らない
+  assert.strictEqual(dev.ctx.pendingPlanIds().length, 0);
   await dev.ctx.syncNow({ force: true });
   assert.strictEqual(server.requests('PUT').length, 0);
+  dev.ctx.clearSampleData();
+  assert.strictEqual(dev.ctx.loadPlans().length, 0);
 });
 
 test('起動時に、モック段階の保存キーが消える', () => {

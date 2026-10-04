@@ -162,7 +162,7 @@ function makeUi(server, extra) {
   };
   context.window.document = context.document;
   const ctx = vm.createContext(context);
-  ['config.js', 'master.js', 'data.js', 'plan.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js', 'review-ui.js'].forEach((f) => {
+  ['config.js', 'master.js', 'data.js', 'plan.js', 'review.js', 'github.js', 'sync.js', 'messages.js', 'images.js', 'app.js', 'plan-ui.js', 'review-ui.js'].forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(APP_DIR, f), 'utf8'), ctx, { filename: f });
   });
   ctx.run = (code) => vm.runInContext(code, ctx);
@@ -358,8 +358,8 @@ test('見るだけ：記録・設定のボタンが出ず、開けない。一�
   const mother = makeUi(server);
   await enterToken(mother, { token: TOKEN_R, mode: 'read' });
   assert.deepStrictEqual(mother.visibleScreens(), ['screen-top']);
-  ['menu-record', 'menu-review'].forEach((id) => assert.ok(mother.$(id).hidden, id));
-  assert.ok(!mother.$('menu-records').hidden);
+  assert.ok(mother.$('menu-record').hidden);
+  assert.ok(!mother.$('menu-records').hidden && !mother.$('menu-review').hidden, '一覧と振り返りは見られる');
   assert.ok(mother.$('admin-menu').hidden, '管理機能は初期は出ない');
   await mother.$('sync-line').click();
   await mother.$('sync-admin').children[0].click();
@@ -665,10 +665,12 @@ test('わからなかったところ：「わからなかった」の課題を�
   ui.ctx.goTo('screen-top');
   await ui.$('menu-review').click();
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
+  assert.ok(!ui.$('review-panel-summary').hidden && ui.$('review-panel-note').hidden, '最初は今週のまとめ');
+  await chipByText(ui.$('review-tabs'), 'ノート').click();
   const list = ui.$('review-list');
   assert.ok(/理科（1）/.test(list.textContent) && /化学反応式の係数/.test(list.textContent));
   assert.ok(/そもそも分からない/.test(list.textContent) && /正答率 〜50%/.test(list.textContent));
-  assert.strictEqual(ui.$('review-summary').textContent, 'まだ 1件　わかった 0件');
+  assert.strictEqual(ui.$('review-note-count').textContent, 'まだ 1件　わかった 0件');
 
   await buttonByText(list, 'わかった').click();
   await ui.settle();
@@ -686,6 +688,7 @@ test('わからなかったところ：「わからなかった」の課題を�
 
   ui.ctx.goTo('screen-top');
   await ui.$('menu-review').click();
+  await chipByText(ui.$('review-tabs'), 'ノート').click();
   await buttonByText(ui.$('review-list'), '取り消す').click();
   await ui.settle();
   assert.strictEqual(JSON.parse(server.files.get(p).text).unclear.resolvedAt, null);
@@ -713,6 +716,78 @@ test('わからなかったところ：書かなければ unclear は付かな�
   const after = JSON.parse(server.files.get(`records/${today.slice(0, 7)}/${old.id}.json`).text);
   assert.deepStrictEqual(Object.keys(after), Object.keys(old), '項目は増えない');
   assert.ok(!('unclear' in after));
+});
+
+test('振り返り：最初は今週のまとめ。表示を「時間／学習内容／課題／計画」で切り替える。週を戻れ、今週より先には進めない。赤の警告や「未達」は出ない', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  ui.ctx.seedSampleData();
+  await ui.$('menu-review').click();
+  const body = ui.$('review-summary-body');
+  const text = body.textContent;
+  // 最初は「時間」：時間帯×曜日の表（7日ぶんの合計つき）と、できたことの文。見出しの横に日数と合計時間
+  const count = (cls) => findAll(ui.$('review-summary-body'), (e) => e.classSet.has(cls)).length;
+  const headText = () => findAll(ui.$('review-summary-body'), (e) => e.classSet.has('review-head'))[0].textContent;
+  assert.ok(/^できたこと\d日・/.test(headText()), headText());
+  assert.ok(/数50/.test(text), text);
+  assert.strictEqual(count('band-grid'), 1);
+  assert.strictEqual(count('band-total'), 8, '「合計」の見出しと7日ぶん');
+  assert.strictEqual(count('praise-list'), 1);
+  assert.strictEqual(count('hint-card'), 0, '気づきは「計画」に出す');
+  assert.strictEqual(count('subj-legend'), 0, '凡例は出さない');
+
+  // 「学習内容」：曜日ごとに、記録ごとの3行（やったこと・時間・正答率／学習内容／量）。できたことの文は出さない
+  await chipByText(ui.$('review-summary-body'), '学習内容').click();
+  assert.strictEqual(count('band-grid') + count('praise-list'), 0);
+  assert.strictEqual(count('day-row'), 7);
+  const detail = ui.$('review-summary-body').textContent;
+  assert.ok(/宿題・提出物50分〜90%/.test(detail) && /計算20分・文章題30分/.test(detail) && /宿題 6ページ/.test(detail), detail);
+
+  // 「課題」：課題ごとの回数と教科
+  await chipByText(ui.$('review-summary-body'), '課題').click();
+  const issueText = ui.$('review-summary-body').textContent;
+  assert.ok(/また間違えた数学\d回/.test(issueText) && /課題なしの記録 \d回/.test(issueText), issueText);
+  assert.strictEqual(count('day-row') + count('band-grid') + count('praise-list'), 0);
+
+  // 「計画」：計画の進みと気づき。見出しは変わらない
+  await chipByText(ui.$('review-summary-body'), '計画').click();
+  const planText = ui.$('review-summary-body').textContent;
+  assert.ok(/^できたこと\d日・/.test(headText()));
+  assert.ok(/計画の進み（サンプルのテスト）/.test(planText) && /テストまで あと28日/.test(planText), planText);
+  assert.ok(/ヒント/.test(planText), 'サンプルでは気づきが出る');
+  assert.ok(count('hint-card') >= 1 && count('hint-card') <= 3);
+  assert.strictEqual(count('day-row') + count('band-grid'), 0);
+  assert.ok(findAll(ui.$('review-summary-body'), (e) => e.textContent === '学習計画を開く').length === 0, '管理機能を使わない端末には出ない');
+  assert.ok(!/未達|サボ|足りない/.test(text + detail + issueText + planText));
+  const order = findAll(ui.$('review-summary-body'), (e) => e.classSet.has('seg')).map((e) => e.textContent);
+  assert.deepStrictEqual(order, ['時間', '学習内容', '課題', '計画']);
+  await chipByText(ui.$('review-summary-body'), '時間').click();
+  assert.strictEqual(count('band-grid'), 1);
+  assert.ok(ui.$('review-week-label').textContent.startsWith('今週'));
+  assert.ok(ui.$('btn-review-next').disabled);
+  await ui.$('btn-review-prev').click();
+  assert.ok(!ui.$('review-week-label').textContent.startsWith('今週'));
+  assert.ok(!ui.$('btn-review-next').disabled);
+});
+
+test('振り返り：見るだけの端末でも開け、ノートの「わかった」は出ない', async () => {
+  const server = newServer();
+  const owner = makeUi(server);
+  await enterToken(owner, { token: TOKEN_W, mode: 'write' });
+  const d = owner.ctx.run('formatDate(new Date())');
+  const r = sampleRecord({ id: d.replace(/-/g, '') + '-193045-a3f9', date: d });
+  r.unclear = { text: '連立方程式の文章題', resolvedAt: null };
+  owner.ctx.saveRecord(r);
+  owner.ctx.kickSync();
+  await owner.settle();
+
+  const mother = makeUi(server);
+  await enterToken(mother, { token: TOKEN_R, mode: 'read' });
+  await mother.$('menu-review').click();
+  assert.deepStrictEqual(mother.visibleScreens(), ['screen-review']);
+  await chipByText(mother.$('review-tabs'), 'ノート').click();
+  assert.ok(/連立方程式の文章題/.test(mother.$('review-list').textContent));
+  assert.strictEqual(findAll(mother.$('review-list'), (e) => e.tagName === 'button').length, 0);
 });
 
 (async () => {
