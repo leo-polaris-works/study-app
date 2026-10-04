@@ -93,11 +93,11 @@ async function githubGetRepo(cfg) {
   return res.data;
 }
 
-// フォルダの一覧。フォルダがまだなければ空の配列
-async function githubListDir(cfg, dirPath) {
+// フォルダの一覧（type＝'file'：ファイル／'dir'：下のフォルダ）。フォルダがまだなければ空の配列
+async function githubListDir(cfg, dirPath, type) {
   try {
     const res = await githubRequest(cfg, 'GET', contentsApiPath(cfg, dirPath));
-    return Array.isArray(res.data) ? res.data.filter((x) => x.type === 'file').map((x) => ({ name: x.name, path: x.path, sha: x.sha })) : [];
+    return Array.isArray(res.data) ? res.data.filter((x) => x.type === (type || 'file')).map((x) => ({ name: x.name, path: x.path, sha: x.sha })) : [];
   } catch (e) {
     if (e.kind === 'notfound') return [];
     throw e;

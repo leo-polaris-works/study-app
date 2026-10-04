@@ -1,4 +1,4 @@
-// 振り返りの集計：週のまとめ・できたこと・計画の進み・気づき・来週の1つの候補。画面から独立した計算だけを置く。
+// 振り返りの集計：週のまとめ・できたこと・計画の進み・気づき・がんばること。画面から独立した計算だけを置く。
 // 比べるのは先週の自分と計画だけ。
 
 const RR = REVIEW_RULES;
@@ -184,8 +184,7 @@ function lagInsight(b, current) {
   const name = `${b.subject} ${b.label}`;
   let text = `${name}：予定まであと${b.deficit}${b.unit}`;
   if (current && b.perDay > 0) text += `。1日${b.perDay}${b.unit}で今月中に追いつけます`;
-  const label = b.perDay > 0 ? `${b.subject}${b.label}を1日${b.perDay}${b.unit}` : `${b.subject}${b.label}を予定に追いつかせる`;
-  return { kind: 'lag', priority: b.ratio < RR.bigLagRatio ? 1 : 4, subject: b.subject, text, change: { id: `c-insight-lag-${b.materialId}`, label } };
+  return { kind: 'lag', priority: b.ratio < RR.bigLagRatio ? 1 : 4, subject: b.subject, text };
 }
 
 // 教科のつまずき（①正答率が低い ②空回り ③同じ課題がくり返す）。教科ごとに最も強いもの1つ
@@ -198,7 +197,6 @@ function stumbleInsight(subject, list) {
       kind: 'accuracy',
       subject,
       text: `${subject}：正答率50%以下の回が${low}回（${acc.length}回中）。×を次の日に解き直すと定着しやすい`,
-      change: { id: `c-insight-redo-${subject}`, label: `${subject}の×を次の日に解き直す` },
     };
   }
 
@@ -218,7 +216,6 @@ function stumbleInsight(subject, list) {
       kind: 'spin',
       subject,
       text: `${subject} ${spin.label}に${formatMinutes(spin.minutes)}。正答率が上がらないときは、やり方を変えるサイン`,
-      change: { id: `c-insight-method-${subject}`, label: `${subject} ${spin.label}のやり方を1つ変える` },
     };
   }
 
@@ -241,14 +238,12 @@ function stumbleInsight(subject, list) {
       subject,
       link: 'note',
       text: `${subject}：「${rep.label}」が${rep.n}回。ノートを見ながら、親か先生に聞いてみよう`,
-      change: { id: `c-insight-ask-${subject}`, label: `${subject}のわからなかったところを聞く` },
     };
   }
   return {
     kind: 'review',
     subject,
     text: `${subject}：「${rep.label}」が${rep.n}回。前の内容を思い出してから始めると効きます`,
-    change: { id: `c-insight-recall-${subject}`, label: `${subject}は前の内容を思い出してから始める` },
   };
 }
 
@@ -271,7 +266,6 @@ function conditionInsight(list) {
     priority: 2,
     subject: null,
     text: `「${rep.label}」が${rep.n}回。時間帯や場所を変えてみる？`,
-    change: { id: 'c-insight-time', label: '勉強する時間帯か場所を変える' },
   };
 }
 
@@ -297,7 +291,6 @@ function detectInsights(records, weekStart, today, progress) {
           priority: 3,
           subject: s,
           text: `${s}：この${RR.windowDays === 14 ? '2週間' : RR.windowDays + '日'}、記録がありません`,
-          change: { id: `c-insight-gap-${s}`, label: `${s}を週1回15分` },
         })
       );
     }
@@ -312,7 +305,6 @@ function detectInsights(records, weekStart, today, progress) {
         priority: 5,
         subject: null,
         text: `今週は${formatMinutes(total)}（先週は${formatMinutes(prevTotal)}）。忙しかった週？`,
-        change: { id: 'c-insight-schedule', label: '勉強する曜日と時間を決める' },
       });
     }
   }
@@ -322,14 +314,8 @@ function detectInsights(records, weekStart, today, progress) {
     .slice(0, RR.maxInsights);
 }
 
-// 来週変える1つの候補：気づきから作った候補を先に、決まった候補を後に（同じ文は1つにする）
-function changeCandidates(insights) {
-  const out = [];
-  insights
-    .map((x) => x.change)
-    .concat(CHANGE_CANDIDATES)
-    .forEach((c) => {
-      if (c && !out.some((x) => x.label === c.label)) out.push({ id: c.id, label: c.label });
-    });
-  return out;
+// その週にがんばること：その週までに決めたうち、いちばん新しいもの（変えるまで続く）。決めていない・取り消したときは null
+function changeInEffect(reviews, weekStart) {
+  const latest = reviews.filter((r) => !r.deleted && r.weekStart <= weekStart).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))[0];
+  return latest ? latest.change : null;
 }

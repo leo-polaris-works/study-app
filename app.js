@@ -22,6 +22,7 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach((s) => {
     s.hidden = s.id !== id;
   });
+  $('change-dialog').hidden = true;
   window.scrollTo(0, 0);
 }
 
@@ -71,6 +72,8 @@ function renderTop() {
   $('admin-menu').hidden = !anyAdmin;
   renderSyncLine();
 
+  renderTopChange();
+
   const s = weekSummary();
   $('week-total').textContent = formatMinutes(s.totalMinutes);
   $('week-days').textContent = `${s.dayCount}日`;
@@ -91,6 +94,58 @@ function renderTop() {
     box.appendChild(row);
   });
 }
+
+// --- 今週がんばること（決めた1つは、変えるまで続く。TOP と振り返りから同じダイアログで決める） ---
+function currentChange() {
+  return changeInEffect(loadReviews(), startOfWeekStr());
+}
+
+// 見るだけの端末では押せない（決めていなければ出さない）
+function renderTopChange() {
+  const change = currentChange();
+  const box = $('top-change');
+  box.innerHTML = '';
+  box.hidden = !change && isReadOnly();
+  box.disabled = isReadOnly();
+  box.appendChild(el('span', 'top-change-label', '今週がんばること'));
+  box.appendChild(el('span', 'top-change-text' + (change ? '' : ' is-empty'), change ? changeText(change) : 'タップして決める'));
+}
+
+function openChangeDialog() {
+  if (isReadOnly()) return;
+  const change = currentChange();
+  const list = $('change-list');
+  list.innerHTML = '';
+  CHANGE_CANDIDATES.forEach((c) => {
+    list.appendChild(makeChip(c.label, !!change && change.id === c.id, () => decideChange({ id: c.id, label: c.label }), 'change-chip'));
+  });
+  const input = $('change-input');
+  input.maxLength = CHANGE_TEXT_MAX;
+  input.placeholder = `自分で書く（${CHANGE_TEXT_MAX}字まで）`;
+  input.value = change && change.id === CHANGE_FREE_ID ? change.text : '';
+  $('btn-change-clear').hidden = !change;
+  $('change-dialog').hidden = false;
+}
+
+function decideChange(change) {
+  if (isReadOnly()) return;
+  saveWeekChange(startOfWeekStr(), change);
+  $('change-dialog').hidden = true;
+  kickSync();
+  if (currentScreen === 'screen-review') renderReview();
+  else renderTop();
+}
+
+$('top-change').addEventListener('click', openChangeDialog);
+$('btn-change-close').addEventListener('click', () => ($('change-dialog').hidden = true));
+$('change-dialog').addEventListener('click', (e) => {
+  if (e.target === $('change-dialog')) $('change-dialog').hidden = true;
+});
+$('btn-change-free').addEventListener('click', () => {
+  const text = $('change-input').value.trim().slice(0, CHANGE_TEXT_MAX);
+  if (text) decideChange({ id: CHANGE_FREE_ID, label: '自分で書く', text });
+});
+$('btn-change-clear').addEventListener('click', () => decideChange(null));
 
 $('menu-record').addEventListener('click', () => {
   if (!isReadOnly()) startInput();
@@ -1114,6 +1169,8 @@ function renderSettingsBody() {
 }
 
 // --- 保存の状態（TOP の1行・登録結果） ---
+const LOCAL_ONLY_NOTE = 'この端末にある記録で表示しています'; // 保存先から取れなかったとき
+
 function formatSyncTime(iso) {
   return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} ${iso.slice(11, 16)}`;
 }

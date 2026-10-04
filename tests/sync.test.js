@@ -809,6 +809,277 @@ test('互換：わからなかったところ（unclear）がある記録も、�
   assert.ok(!b.ctx.findRecord(bad.id));
 });
 
+// --- 今週がんばること（reviews/） ---
+function monday(dev, weeksAgo) {
+  return dev.ctx.run(`shiftDate(startOfWeekStr(), -${7 * (weeksAgo || 0)})`);
+}
+
+const CHANGE_A = { id: 'c-daily', label: '毎日、ワークを少しでも進める' };
+const CHANGE_B = { id: 'c-word-5', label: '単語1日5語' };
+const changeOf = (dev, week) => dev.ctx.findReview(dev.ctx.reviewIdOf(week)).change;
+const CHANGE_FREE = { id: 'c-free', label: '自分で書く', text: '塾の前に理科を1ページ😀' };
+
+test('がんばること：reviews/review-YYYYMMDD.json に保存され、別の端末に届く。変える・取り消すも届く', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const week = monday(a);
+  const r = plain(a.ctx.saveWeekChange(week, CHANGE_A));
+  eq(a.ctx.getSyncSummary().pending, 1);
+  await a.ctx.syncNow({ force: true });
+  const path = `reviews/review-${week.replace(/-/g, '')}.json`;
+  eq(serverRecord(server, path), r);
+  eq(Object.keys(r), ['schemaVersion', 'id', 'weekStart', 'change', 'device', 'createdAt', 'updatedAt', 'deleted']);
+  eq(a.ctx.pendingReviewIds(), []);
+
+  await b.ctx.syncNow({ force: true });
+  eq(changeOf(b, week), CHANGE_A);
+  eq(b.ctx.changeInEffect(b.ctx.loadReviews(), monday(b)), CHANGE_A);
+
+  // 別の端末で変える（同じファイルを上書き。作った日時は変わらない）
+  const changed = plain(b.ctx.saveWeekChange(week, CHANGE_FREE));
+  changed.updatedAt = '2099-01-01T00:00:00+09:00';
+  b.ctx.putReview(changed);
+  await b.ctx.syncNow({ force: true });
+  await a.ctx.syncNow({ force: true });
+  eq(changeOf(a, week), CHANGE_FREE);
+  eq(a.ctx.findReview(r.id).createdAt, r.createdAt);
+  eq(a.ctx.changeText(changeOf(a, week)), CHANGE_FREE.text);
+
+  // 取り消しは、同じファイルの change を null にする（ファイルは残る）
+  const del = plain(a.ctx.saveWeekChange(week, null));
+  del.updatedAt = '2099-01-02T00:00:00+09:00';
+  a.ctx.putReview(del);
+  await a.ctx.syncNow({ force: true });
+  await b.ctx.syncNow({ force: true });
+  eq(changeOf(b, week), null);
+  eq(b.ctx.changeInEffect(b.ctx.loadReviews(), week), null);
+  eq(serverRecord(server, path).change, null);
+  eq(serverRecord(server, path).deleted, false);
+  eq([...server.files.keys()], [path]);
+});
+
+test('がんばること：同じ週に2台で別々に決めたら updatedAt が新しいほうが残る。形が違うものは取り込まない', async () => {
+  const server = newWorld();
+  const a = makeDevice(server, 'iPad');
+  const b = makeDevice(server, 'Android');
+  await connect(a, TOKEN_W);
+  await connect(b, TOKEN_W2);
+  const week = monday(a);
+  const newer = plain(a.ctx.saveWeekChange(week, CHANGE_A));
+  newer.updatedAt = '2099-01-03T00:00:00+09:00';
+  a.ctx.putReview(newer);
+  const older = plain(b.ctx.saveWeekChange(week, CHANGE_B));
+  older.updatedAt = '2099-01-02T00:00:00+09:00';
+  b.ctx.putReview(older);
+  await a.ctx.syncNow({ force: true });
+  const r = await b.ctx.syncNow({ force: true });
+  eq(changeOf(b, week), CHANGE_A);
+  assert.ok(/そろえました/.test(r.notice));
+  eq(b.ctx.pendingReviewIds(), []);
+
+  // 古いほうが先に置かれていた場合は、新しいほうで上書きする
+  const week2 = monday(a, 1);
+  const first = plain(b.ctx.saveWeekChange(week2, CHANGE_B));
+  first.updatedAt = '2099-01-02T00:00:00+09:00';
+  b.ctx.putReview(first);
+  await b.ctx.syncNow({ force: true });
+  const second = plain(a.ctx.saveWeekChange(week2, CHANGE_A));
+  second.updatedAt = '2099-01-03T00:00:00+09:00';
+  a.ctx.putReview(second);
+  await a.ctx.syncNow({ force: true });
+  eq(serverRecord(server, `reviews/review-${week2.replace(/-/g, '')}.json`).change, CHANGE_A);
+
+  const valid = (x) => a.ctx.isValidReview(x);
+  assert.ok(valid(newer) && valid(Object.assign({}, newer, { change: CHANGE_FREE })) && valid(Object.assign({}, newer, { change: null })));
+  [
+    { id: 'review-20990101' },
+    { weekStart: '2026/10/05' },
+    { change: 'x' },
+    { change: { id: 'c-daily' } },
+    { change: { id: 'c-free', label: '自分で書く' } },
+    { change: { id: 'c-free', label: '自分で書く', text: '' } },
+    { change: { id: 'c-daily', label: 'x', text: 5 } },
+    { deleted: 'no' },
+    { device: null },
+  ].forEach((patch) => assert.ok(!valid(Object.assign({}, newer, patch)), JSON.stringify(patch)));
+
+  const week3 = monday(a, 2);
+  const bad = Object.assign({}, newer, { id: a.ctx.reviewIdOf(week3), weekStart: week3, change: 'x' });
+  server.putFile(`reviews/${bad.id}.json`, JSON.stringify(bad));
+  server.putFile('reviews/README.md', 'x');
+  server.putFile('reviews/review-20990105.json', '{ broken');
+  await b.ctx.syncNow({ force: true });
+  eq(b.ctx.findReview(bad.id), null);
+  assert.strictEqual(b.ctx.getSyncSummary().error, null);
+});
+
+test('がんばること：見るだけの端末は送らない。鍵を消すと送信済みの控えは消え、送信待ちは残る', async () => {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  const sent = dev.ctx.saveWeekChange(monday(dev, 1), CHANGE_A);
+  await dev.ctx.syncNow({ force: true });
+  dev.offline = true;
+  const waiting = dev.ctx.saveWeekChange(monday(dev), CHANGE_B);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.disconnectSync();
+  eq(dev.ctx.loadReviews().map((x) => x.id), [waiting.id]);
+  eq(dev.ctx.pendingReviewIds(), [waiting.id]);
+  assert.ok(sent.id !== waiting.id);
+
+  const reader = makeDevice(server, 'Android');
+  await connect(reader, TOKEN_R, 'read');
+  await reader.ctx.syncNow({ force: true });
+  eq(changeOf(reader, monday(dev, 1)), CHANGE_A);
+  eq(server.requests('PUT').length, 1);
+});
+
+// --- 期間を指定した取り込み ---
+function putRemote(server, r) {
+  const p = `records/${r.date.slice(0, 7)}/${r.id}.json`;
+  server.putFile(p, JSON.stringify(r, null, 2) + '\n');
+  return p;
+}
+
+const fileGets = (server) => server.requests('GET').filter((r) => /\/contents\/records\/[^/]+\/[^/]+\.json$/.test(new URL(r.url).pathname)).length;
+
+test('期間を指定した取り込み：取り込み範囲（63日）より前の月の記録を取れる。sha が同じものは取り直さない', async () => {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  const mk = (n, tail) => {
+    const date = daysAgo(dev, n);
+    const r = sampleRecord({ id: idFor(date, tail), date });
+    putRemote(server, r);
+    return r;
+  };
+  const recent = mk(3, 'r0aa');
+  const old1 = mk(100, 'r1aa');
+  const old2 = mk(130, 'r2aa');
+  const older = mk(200, 'r3aa');
+  await dev.ctx.syncNow({ force: true });
+  eq(dev.ctx.loadRecords().map((r) => r.id), [recent.id]);
+  eq(await dev.ctx.loadRecordMonths(), true);
+  eq(dev.ctx.run('recordMonths'), [older, old2, old1, recent].map((r) => r.date.slice(0, 7)).filter((m, i, all) => all.indexOf(m) === i).sort());
+  eq(await dev.ctx.loadRecordMonths(), false);
+
+  // ふだんの範囲なら通信しない
+  const before = server.log.length;
+  eq(await dev.ctx.pullRange(daysAgo(dev, 20), today(dev)), { fetched: 0, failed: false });
+  eq(server.log.length, before);
+
+  const r1 = await dev.ctx.pullRange(old2.date, old1.date);
+  eq(r1, { fetched: 2, failed: false });
+  eq(dev.ctx.findRecord(old1.id), old1);
+  eq(dev.ctx.findRecord(old2.id), old2);
+  assert.ok(!dev.ctx.findRecord(older.id), '指定した期間の月だけ取る');
+  eq(server.requests('PUT').length, 0);
+
+  // 続けて同じ期間を見ても通信しない。時間がたって一覧を見直しても、sha が同じファイルは取らない
+  const logged = server.log.length;
+  eq(await dev.ctx.pullRange(old2.date, old1.date), { fetched: 0, failed: false });
+  eq(server.log.length, logged);
+  dev.ctx.run('rangePulledAt = {}');
+  const gets = fileGets(server);
+  eq(await dev.ctx.pullRange(old2.date, old1.date), { fetched: 0, failed: false });
+  assert.ok(server.log.length > logged, '一覧は見直す');
+  eq(fileGets(server), gets);
+
+  // 別の端末が直した記録だけ取り直す
+  const edited = Object.assign({}, old1, { totalMinutes: 25, updatedAt: '2099-01-01T00:00:00+09:00' });
+  putRemote(server, edited);
+  dev.ctx.run('rangePulledAt = {}');
+  eq(await dev.ctx.pullRange(old2.date, old1.date), { fetched: 1, failed: false });
+  eq(fileGets(server), gets + 1);
+  eq(dev.ctx.findRecord(old1.id).totalMinutes, 25);
+});
+
+test('期間を指定した取り込み：通信できないときは failed を返し、端末の記録はそのまま。送信待ちの記録は上書きしない', async () => {
+  const server = newWorld();
+  const dev = makeDevice(server, 'iPad');
+  await connect(dev, TOKEN_W);
+  const date = daysAgo(dev, 100);
+  const remote = sampleRecord({ id: idFor(date, 'p0aa'), date });
+  putRemote(server, remote);
+  dev.offline = true;
+  eq(await dev.ctx.pullRange(date, date), { fetched: 0, failed: true });
+  eq(dev.ctx.loadRecords(), []);
+  dev.offline = false;
+
+  const mine = Object.assign({}, remote, { totalMinutes: 15, updatedAt: '2099-01-01T00:00:00+09:00' });
+  dev.ctx.updateRecord(mine);
+  eq(await dev.ctx.pullRange(date, date), { fetched: 0, failed: false });
+  eq(dev.ctx.findRecord(remote.id).totalMinutes, 15);
+
+  // 鍵がない端末は何もしない
+  const none = makeDevice(server, 'Android');
+  const n = server.log.length;
+  eq(await none.ctx.pullRange(date, date), { fetched: 0, failed: false });
+  eq(await none.ctx.loadRecordMonths(), false);
+  eq(server.log.length, n);
+});
+
+test('互換：がんばることを決めても、書き込むのは reviews/ だけ。期間を指定して取り込んでも、既存の記録・計画のファイルは1バイトも変わらない', async () => {
+  const { server, recs } = existingWorld();
+  const helper = makeDevice(server, 'iPad');
+  const p = makePlan(helper, {});
+  server.putFile(`plans/${p.id}.json`, JSON.stringify(p, null, 2) + '\n');
+  const before = snapshot(server);
+  const dev = makeDevice(server, 'Android');
+  await connect(dev, TOKEN_W);
+  await dev.ctx.syncNow({ force: true });
+  eq(dev.ctx.loadReviews(), []);
+  assert.strictEqual(dev.ctx.getSyncSummary().error, null, 'reviews/ がなくてもエラーにならない');
+
+  await dev.ctx.loadRecordMonths();
+  eq(await dev.ctx.pullRange(recs.tooOld.date, today(dev)), { fetched: 1, failed: false });
+  eq(dev.ctx.findRecord(recs.tooOld.id), recs.tooOld);
+  eq(server.requests('PUT').length, 0);
+  assertUnchanged(server, before, '期間を指定して取り込んだあと');
+
+  const week = monday(dev);
+  dev.ctx.saveWeekChange(week, CHANGE_A);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.saveWeekChange(week, CHANGE_FREE);
+  await dev.ctx.syncNow({ force: true });
+  dev.ctx.saveWeekChange(week, null);
+  await dev.ctx.syncNow({ force: true });
+  const puts = server.requests('PUT').map((r) => decodeURIComponent(new URL(r.url).pathname));
+  assert.ok(puts.length === 3 && puts.every((x) => x.includes('/contents/reviews/')), puts.join('\n'));
+  assertUnchanged(server, before, 'がんばることを決めたあと');
+  eq([...server.files.keys()].filter((k) => !before.has(k)), [`reviews/review-${week.replace(/-/g, '')}.json`]);
+  eq(dev.ctx.findPlan(p.id), p);
+});
+
+test('互換：前の版で使っていた端末（がんばることの保存データがない）を新しい版で開いても、記録・送信待ち・計画はそのまま。がんばることは別のキーに置く', async () => {
+  const { server, recs } = existingWorld();
+  const helper = makeDevice(server, 'iPad');
+  const d = daysAgo(helper, 1);
+  const unsent = sampleRecord({ id: idFor(d, 'oldc'), date: d });
+  const plan = makePlan(helper, {});
+  const oldStore = {
+    study_records_v6: JSON.stringify([recs.recent, unsent]),
+    study_outbox_v1: JSON.stringify([unsent.id]),
+    study_plans_v1: JSON.stringify([plan]),
+    study_plan_outbox_v1: JSON.stringify([plan.id]),
+    study_sync_v1: JSON.stringify({ owner: OWNER, repo: REPO, token: TOKEN_W, mode: 'write', authFailed: false }),
+    study_device_v1: JSON.stringify({ id: 'oldc', kind: 'iPad' }),
+  };
+  const dev = makeDevice(server, 'iPad', oldStore);
+  eq(dev.ctx.loadReviews(), []);
+  eq(dev.ctx.getSyncSummary().pending, 2);
+  dev.ctx.saveWeekChange(monday(dev), CHANGE_A);
+  ['study_records_v6', 'study_outbox_v1', 'study_plans_v1', 'study_plan_outbox_v1', 'study_device_v1'].forEach((k) => assert.strictEqual(dev.store.get(k), oldStore[k], k));
+  eq(dev.ctx.getSyncSummary().pending, 3);
+  await dev.ctx.syncNow({ force: true });
+  assert.strictEqual(server.files.get(`records/${d.slice(0, 7)}/${unsent.id}.json`).text, JSON.stringify(unsent, null, 2) + '\n');
+  assert.strictEqual(server.files.get(`plans/${plan.id}.json`).text, JSON.stringify(plan, null, 2) + '\n');
+  eq(dev.ctx.getSyncSummary().pending, 0);
+});
+
 (async () => {
   let failed = 0;
   for (const t of tests) {

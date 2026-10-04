@@ -213,13 +213,13 @@ const REVIEW_RULES = {
   maxPraise: 3,
 };
 
-// 来週変える1つ（決まった候補）
+// 今週がんばること（決まった候補）
 const CHANGE_CANDIDATES = [
-  { id: 'c-redo-next', label: '×を次の日に解き直す' },
-  { id: 'c-recall', label: '前の週の内容を思い出してから始める' },
-  { id: 'c-morning-word', label: '朝に英単語を10分' },
-  { id: 'c-scso-twice', label: '理社を週2回入れる' },
-  { id: 'c-schedule', label: '勉強する曜日と時間を決める' },
-  { id: 'c-phone', label: 'スマホを別の部屋に置く' },
-  { id: 'c-plan', label: '計画を見直す（割合・周回）' },
+  { id: 'c-word-5', label: '単語1日5語' },
+  { id: 'c-bedtime-memo', label: '寝る前10分暗記' },
+  { id: 'c-daily', label: '毎日、ワークを少しでも進める' },
+  { id: 'c-behind-first', label: '遅れている教材から先にやる' },
+  { id: 'c-on-time', label: '毎日計画の時間通り勉強する' },
 ];
+const CHANGE_FREE_ID = 'c-free'; // 自分で書いたもの
+const CHANGE_TEXT_MAX = 30;

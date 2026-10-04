@@ -207,9 +207,10 @@ function applyRemoteRecord(record, path, sha) {
 
 // 送信済みの記録・計画の控えを消す（鍵を消すとき）。送信待ちは残す
 function clearSyncedRecords() {
-  const pending = pendingIds().concat(pendingPlanIds());
+  const pending = pendingIds().concat(pendingPlanIds(), pendingReviewIds());
   writeRecords(loadRecords().filter((r) => pending.includes(r.id)));
   writePlans(loadPlans().filter((p) => pending.includes(p.id)));
+  writeReviews(loadReviews().filter((r) => pending.includes(r.id)));
   const meta = readJson(META_KEY, {});
   Object.keys(meta).forEach((id) => {
     if (!pending.includes(id)) delete meta[id];
@@ -323,6 +324,101 @@ function isValidPlan(p) {
   if (!Array.isArray(p.months) || !p.months.every((m) => m && isStr(m.month) && /^\d{4}-\d{2}$/.test(m.month) && isNum(m.percent))) return false;
   if (!isNum(p.firstAccuracy)) return false;
   if (!isStr(p.createdAt) || !isStr(p.updatedAt) || typeof p.deleted !== 'boolean') return false;
+  return true;
+}
+
+// --- 今週がんばること（決めた・変えた週ごとに1ファイル。記録・計画と同じく端末内が先で、送信は sync.js） ---
+const REVIEWS_KEY = 'study_reviews_v1';
+const REVIEW_OUTBOX_KEY = 'study_review_outbox_v1';
+const REVIEW_PREFIX = 'review-';
+
+// ID はその週の月曜（どの端末で決めても同じファイルになる）
+function reviewIdOf(weekStart) {
+  return REVIEW_PREFIX + weekStart.replace(/-/g, '');
+}
+
+function loadReviews() {
+  const list = readJson(REVIEWS_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeReviews(reviews) {
+  localStorage.setItem(REVIEWS_KEY, JSON.stringify(reviews));
+}
+
+function findReview(id) {
+  return loadReviews().find((r) => r.id === id) || null;
+}
+
+function defaultReviewPath(review) {
+  return `reviews/${review.id}.json`;
+}
+
+function pendingReviewIds() {
+  const list = readJson(REVIEW_OUTBOX_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function markReviewPending(review) {
+  if (!getMeta(review.id).path) setMeta(review.id, { path: defaultReviewPath(review) });
+  const ids = pendingReviewIds();
+  if (!ids.includes(review.id)) ids.push(review.id);
+  localStorage.setItem(REVIEW_OUTBOX_KEY, JSON.stringify(ids));
+}
+
+function clearPendingReview(id) {
+  localStorage.setItem(REVIEW_OUTBOX_KEY, JSON.stringify(pendingReviewIds().filter((x) => x !== id)));
+}
+
+function putReview(review) {
+  const reviews = loadReviews();
+  const i = reviews.findIndex((r) => r.id === review.id);
+  if (i >= 0) reviews[i] = review;
+  else reviews.push(review);
+  writeReviews(reviews);
+}
+
+function applyRemoteReview(review, path, sha) {
+  putReview(review);
+  setMeta(review.id, { path, sha });
+}
+
+// その週のファイルに、決めた1つを書く。change が null なら取り消し（その週から「決めていない」になる）
+function saveWeekChange(weekStart, change) {
+  const prev = findReview(reviewIdOf(weekStart));
+  const now = localIso();
+  const review = {
+    schemaVersion: SCHEMA_VERSION,
+    id: reviewIdOf(weekStart),
+    weekStart,
+    change: change || null,
+    device: getDevice(),
+    createdAt: prev ? prev.createdAt : now,
+    updatedAt: now,
+    deleted: false,
+  };
+  putReview(review);
+  markReviewPending(review);
+  return review;
+}
+
+// 画面に出す文（自分で書いたものは text、候補は label）
+function changeText(change) {
+  return change.id === CHANGE_FREE_ID ? change.text : change.label;
+}
+
+// 形の確認（他の端末から取り込む JSON は必ず通す）
+function isValidReview(r) {
+  const isStr = (v) => typeof v === 'string';
+  if (!r || typeof r !== 'object' || typeof r.schemaVersion !== 'number') return false;
+  if (!isStr(r.weekStart) || !/^\d{4}-\d{2}-\d{2}$/.test(r.weekStart) || r.id !== reviewIdOf(r.weekStart)) return false;
+  const c = r.change;
+  if (c !== null) {
+    if (!c || typeof c !== 'object' || !isStr(c.id) || !isStr(c.label)) return false;
+    if (c.id === CHANGE_FREE_ID ? !isStr(c.text) || !c.text : c.text !== undefined && !isStr(c.text)) return false;
+  }
+  if (!r.device || !isStr(r.device.id) || !isStr(r.device.kind)) return false;
+  if (!isStr(r.createdAt) || !isStr(r.updatedAt) || typeof r.deleted !== 'boolean') return false;
   return true;
 }
 

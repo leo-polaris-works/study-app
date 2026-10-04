@@ -123,7 +123,6 @@ test('計画の遅れ：やった量÷予定が0.6未満は大きな遅れ（優
   assert.deepStrictEqual(kinds(big), ['lag']);
   assert.strictEqual(big[0].priority, 1);
   assert.ok(/理科 ワーク：予定まであと41ページ。1日\d+ページで今月中に追いつけます/.test(big[0].text), big[0].text);
-  assert.ok(/^理科ワークを1日\d+ページ$/.test(big[0].change.label));
   assert.strictEqual(ctx.detectInsights([workDone(60)], WEEK, SUN, at(60))[0].priority, 4);
   assert.strictEqual(at(84).behind.length, 1);
   assert.strictEqual(at(85).behind.length, 0);
@@ -221,11 +220,27 @@ test('気づきは優先順に最大3つ。記録が3件未満なら計画の遅
   assert.deepStrictEqual(kinds(ctx.detectInsights(few, WEEK, SUN, ctx.planProgress(plan, few, WEEK, SUN))), ['lag']);
 });
 
-test('来週の1つの候補：気づきの候補が先、決まった候補が後。同じ文は1つ', () => {
-  const list = ctx.changeCandidates([{ change: { id: 'c-insight-x', label: '数学の×を次の日に解き直す' } }, { change: { id: 'c-insight-y', label: '勉強する曜日と時間を決める' } }]);
-  assert.strictEqual(list[0].label, '数学の×を次の日に解き直す');
-  assert.strictEqual(list.filter((c) => c.label === '勉強する曜日と時間を決める').length, 1);
-  assert.strictEqual(list.length, 1 + ctx.run('CHANGE_CANDIDATES.length'));
+test('がんばること：決めた1つは、変えるまで次の週にも続く。取り消すと、その週から「決めていない」になる', () => {
+  const review = (weekStart, change, deleted) => ({ id: ctx.reviewIdOf(weekStart), weekStart, change, deleted: !!deleted });
+  const fixed = { id: 'c-daily', label: '毎日、ワークを少しでも進める' };
+  const free = { id: 'c-free', label: '自分で書く', text: '塾の前に理科を1ページ' };
+  const at = (list, week) => plain(ctx.changeInEffect(list, week));
+  assert.strictEqual(at([], WEEK), null);
+  // WEEK＝10/5 の週。9/21 の週に決めたものが、変えるまで続く
+  const list = [review(WEEK, free), review('2026-09-21', fixed)];
+  assert.strictEqual(at(list, '2026-09-14'), null, '決める前の週');
+  assert.deepStrictEqual(at(list, '2026-09-21'), fixed);
+  assert.deepStrictEqual(at(list, '2026-09-28'), fixed, '変えていない週にも続く');
+  assert.deepStrictEqual(at(list, WEEK), free);
+  assert.deepStrictEqual(at(list, '2026-11-02'), free);
+  assert.strictEqual(ctx.changeText(fixed), fixed.label);
+  assert.strictEqual(ctx.changeText(free), free.text);
+  // 取り消した週（change＝null）からは出さない。前の週の表示は変わらない
+  const cleared = [review('2026-09-21', fixed), review(WEEK, null)];
+  assert.strictEqual(at(cleared, WEEK), null);
+  assert.strictEqual(at(cleared, '2026-10-12'), null);
+  assert.deepStrictEqual(at(cleared, '2026-09-28'), fixed);
+  assert.deepStrictEqual(at([review('2026-09-21', fixed), review(WEEK, free, true)], WEEK), fixed, '削除の印がついたファイルは見ない');
 });
 
 (async () => {
