@@ -433,6 +433,20 @@ test('くわしく見る（量）：テストまでは、周ごとに予定と�
   ]);
 });
 
+test('今日の目安：今日の予定の量と、今日やった量（届いたら reached）', () => {
+  // monthPlan：10/1〜10/30、理科ワーク300ページ。10/7 の時点で 35ページ → 残り265ページを24日で分ける
+  const recs = [
+    rec({ date: '2026-10-02', subject: '理科', materials: [['m-sc-work', 'ワーク', 10, 'ページ']] }),
+    rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 25, 'ページ']] }),
+  ];
+  const guide = (list) => plain(ctx.todayGuide(ctx.planProgress(monthPlan(), list, WEEK, '2026-10-07')));
+  assert.deepStrictEqual(guide(recs), [{ subject: '理科', label: 'ワーク', unit: 'ページ', amount: 11, done: 0, reached: false }]);
+  const more = recs.concat([rec({ date: '2026-10-07', subject: '理科', materials: [['m-sc-work', 'ワーク', 12, 'ページ']] })]);
+  assert.deepStrictEqual(guide(more), [{ subject: '理科', label: 'ワーク', unit: 'ページ', amount: 11, done: 12, reached: true }], '今日やった量は、今日の目安を変えない');
+  // テストが終わった後は出さない
+  assert.deepStrictEqual(plain(ctx.todayGuide(ctx.planProgress(monthPlan({ testDate: '2026-10-06' }), recs, WEEK, '2026-10-07'))), []);
+});
+
 (async () => {
   let failed = 0;
   for (const t of tests) {

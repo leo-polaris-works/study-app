@@ -186,6 +186,18 @@ function planProgress(plan, records, weekStart, today) {
   return { plan, result, asOf, targets, behind, ahead, adjust, daysLeft: daysUntil(today, plan.testDate) };
 }
 
+// 今日の目安：今日の予定の量と、今日やった量（教材ごと）
+function todayGuide(progress) {
+  return dayTargets(progress.result, progress.asOf)
+    .filter((x) => x.amount > 0.05)
+    .map((x) => {
+      const it = progress.result.items[x.item];
+      const done = it.byDate[progress.asOf] || 0;
+      const amount = roundAmount(x.amount);
+      return { subject: it.subject, label: it.label, unit: it.unit, amount, done, reached: done >= amount };
+    });
+}
+
 // --- 気づき（最大 maxInsights。優先の小さい順） ---
 function lagInsight(b, current) {
   const name = `${b.subject} ${b.label}`;
