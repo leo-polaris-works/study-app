@@ -746,7 +746,7 @@ test('振り返り：最初は今週のまとめ。表示を「時間／学習�
   // 「課題」：課題ごとの回数と教科
   await chipByText(ui.$('review-summary-body'), '課題').click();
   const issueText = ui.$('review-summary-body').textContent;
-  assert.ok(/また間違えた数学\d回/.test(issueText) && /課題なしの記録 \d回/.test(issueText), issueText);
+  assert.ok(/そもそも分からない理科\d回/.test(issueText) && /課題なしの記録 \d回/.test(issueText), issueText);
   assert.strictEqual(count('day-row') + count('band-grid') + count('praise-list'), 0);
 
   // 「計画」：計画の進みと気づき。見出しは変わらない
@@ -1126,6 +1126,53 @@ test('振り返り：くわしく見るでも、取り込み範囲より前の�
   assert.ok(ui.ctx.findRecord(old.id));
   assert.ok(/勉強した時間1日・50分/.test(ui.$('review-detail-body').textContent), ui.$('review-detail-body').textContent);
   assert.strictEqual(server.requests('PUT').length, 0);
+});
+
+test('TOP：計画があれば、今日の目安と今週の目標の進み（「あと○」「✓ 届いた」）を出す。合計時間は小さく1行。押すと振り返りの「計画」が開く', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const body = ui.$('week-body');
+  const count = (cls) => findAll(body, (e) => e.classSet.has(cls)).length;
+
+  // 計画がないとき：教科ごとの時間の棒
+  assert.strictEqual(ui.$('week-facts').textContent, '0日・0分');
+  assert.strictEqual(count('bar-row'), 5);
+  assert.strictEqual(count('goal-row') + count('top-today'), 0);
+  await ui.$('week-card').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
+  assert.ok(findAll(ui.$('review-summary-body'), (e) => e.classSet.has('band-grid')).length === 1, '計画がなければ「時間」の表示');
+  ui.ctx.showScreen('screen-top');
+
+  // サンプル（今日の記録：理科ワーク5ページ・数学の宿題。計画：理科ワーク・英語の単語・数学ワーク）
+  ui.ctx.seedSampleData();
+  ui.ctx.renderTop();
+  assert.ok(/^\d日・\d+時間/.test(ui.$('week-facts').textContent), ui.$('week-facts').textContent);
+  assert.strictEqual(count('bar-row'), 0, '時間の棒は出さない');
+  const text = body.textContent;
+  assert.ok(/^今日の目安/.test(text) && /今週の目標（テストまで あと28日）/.test(text), text);
+  assert.strictEqual(count('goal-row'), 3);
+  assert.ok(findAll(body, (e) => e.classSet.has('goal-left')).every((e) => /^(あと\d+(ページ|語)|✓ 届いた)$/.test(e.textContent)), text);
+  // 今日の目安は教科ごと。今日やった教材には ✓
+  const today = findAll(body, (e) => e.classSet.has('top-today-item')).map((e) => e.textContent);
+  assert.strictEqual(today.length, 3);
+  assert.ok(/^数学ワーク \d+ページ$/.test(today[0]) && /^英語単語 \d+語$/.test(today[1]) && /^理科ワーク \d+ページ ✓$/.test(today[2]), today.join(' / '));
+  assert.ok(!/未達|サボ|足りない/.test(text));
+
+  await ui.$('week-card').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
+  assert.ok(!ui.$('review-panel-summary').hidden);
+  assert.ok(/計画の進み（サンプルのテスト）/.test(ui.$('review-summary-body').textContent), '「計画」の表示で開く');
+});
+
+test('TOP：見るだけの端末でも、今週の進みを見られる', async () => {
+  const server = newServer();
+  const mother = makeUi(server);
+  await enterToken(mother, { token: TOKEN_R, mode: 'read' });
+  mother.ctx.seedSampleData();
+  mother.ctx.renderTop();
+  assert.ok(/今週の目標/.test(mother.$('week-body').textContent));
+  await mother.$('week-card').click();
+  assert.deepStrictEqual(mother.visibleScreens(), ['screen-review']);
 });
 
 (async () => {

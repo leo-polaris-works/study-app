@@ -107,27 +107,109 @@ h2 {
   border-radius: 12px;
   padding: 4px 14px 12px;
   margin-bottom: 14px;
+  cursor: pointer;
 }
 
 .week-card h2 {
-  margin-top: 10px;
+  margin: 10px 0 4px;
 }
 
-.week-numbers {
+.week-head {
   display: flex;
-  gap: 24px;
-  margin-bottom: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.week-numbers span {
-  display: block;
-  font-size: 22px;
-  font-weight: bold;
-}
-
-.week-numbers small {
+.week-facts {
+  font-size: 13px;
   color: var(--color-muted);
+}
+
+.week-sub {
   font-size: 12px;
+  font-weight: bold;
+  color: var(--color-muted);
+  margin: 10px 0 2px;
+}
+
+.week-more {
+  text-align: right;
+  margin-top: 4px;
+}
+
+.week-more .btn {
+  padding: 4px 0;
+}
+
+.top-today {
+  background: var(--color-good-bg);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  margin: 6px 0 8px;
+}
+
+.top-today-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--color-good);
+  margin-bottom: 4px;
+}
+
+.top-today-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 14px;
+}
+
+.top-today-item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+}
+
+.top-today-item .is-done {
+  color: var(--color-good);
+}
+
+.goal-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 76px 84px;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.goal-row .subj-tag {
+  font-size: 12px;
+}
+
+.goal-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goal-row .bar-track {
+  height: 8px;
+}
+
+.goal-left {
+  text-align: right;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.goal-row.is-done .bar-fill {
+  background: var(--color-good);
+}
+
+.goal-row.is-done .goal-left {
+  color: var(--color-good);
+  font-weight: bold;
 }
 
 .bar-row {

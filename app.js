@@ -74,26 +74,84 @@ function renderTop() {
 
   renderTopChange();
 
-  const s = weekSummary();
-  $('week-total').textContent = formatMinutes(s.totalMinutes);
-  $('week-days').textContent = `${s.dayCount}日`;
-
-  const box = $('week-subjects');
-  box.innerHTML = '';
-  const max = Math.max(1, ...Object.values(s.bySubject));
-  SUBJECTS.forEach((name) => {
-    const minutes = s.bySubject[name];
-    const row = el('div', 'bar-row');
-    row.appendChild(el('span', 'bar-name', name));
-    const track = el('div', 'bar-track');
-    const fill = el('div', 'bar-fill');
-    fill.style.width = `${Math.round((minutes / max) * 100)}%`;
-    track.appendChild(fill);
-    row.appendChild(track);
-    row.appendChild(el('span', 'bar-value', formatMinutes(minutes)));
-    box.appendChild(row);
-  });
+  renderTopWeek();
 }
+
+// --- 今週のカード：計画があれば、今日の目安と今週の目標の進み。なければ、教科ごとの時間 ---
+function topProgress() {
+  const weekStart = startOfWeekStr();
+  const plan = planForWeek(loadActivePlans(), weekStart);
+  return plan ? planProgress(plan, loadActiveRecords(), weekStart, formatDate(new Date())) : null;
+}
+
+function topBar(ratio) {
+  const track = el('div', 'bar-track');
+  const fill = el('div', 'bar-fill');
+  fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
+  track.appendChild(fill);
+  return track;
+}
+
+function topSubjectTag(subject) {
+  return el('span', `subj-tag subj-${SUBJECTS.indexOf(subject)}`, subject);
+}
+
+function renderTopWeek() {
+  const s = weekSummary();
+  $('week-facts').textContent = `${s.dayCount}日・${formatMinutes(s.totalMinutes)}`;
+  const box = $('week-body');
+  box.innerHTML = '';
+  const progress = topProgress();
+  const guide = progress ? todayGuide(progress) : [];
+  if (!progress || (!guide.length && !progress.targets.length)) {
+    const max = Math.max(1, ...Object.values(s.bySubject));
+    SUBJECTS.forEach((name) => {
+      const row = el('div', 'bar-row');
+      row.appendChild(el('span', 'bar-name', name));
+      row.appendChild(topBar(s.bySubject[name] / max));
+      row.appendChild(el('span', 'bar-value', formatMinutes(s.bySubject[name])));
+      box.appendChild(row);
+    });
+    return;
+  }
+
+  // 今日の目安（教科ごとにまとめる。今日やった教材には ✓）
+  if (guide.length) {
+    const today = el('div', 'top-today');
+    today.appendChild(el('div', 'top-today-label', '今日の目安'));
+    const list = el('div', 'top-today-list');
+    SUBJECTS.forEach((subject) => {
+      const mine = guide.filter((g) => g.subject === subject);
+      if (!mine.length) return;
+      const item = el('span', 'top-today-item');
+      item.appendChild(topSubjectTag(subject));
+      mine.forEach((g) => item.appendChild(el('span', g.reached ? 'is-done' : null, `${g.label} ${g.amount}${g.unit}${g.reached ? ' ✓' : ''}`)));
+      list.appendChild(item);
+    });
+    today.appendChild(list);
+    box.appendChild(today);
+  }
+
+  // 今週の目標に対してやった量（「あと○」。届いたら「✓ 届いた」）
+  const left = progress.daysLeft;
+  box.appendChild(el('div', 'week-sub', `今週の目標（${left > 0 ? `テストまで あと${left}日` : left === 0 ? 'テストは今日' : 'テストは終わりました'}）`));
+  SUBJECTS.forEach((subject) =>
+    progress.targets
+      .filter((t) => t.subject === subject)
+      .forEach((t) => {
+        const reached = t.done >= t.goal;
+        const row = el('div', 'goal-row' + (reached ? ' is-done' : ''));
+        row.appendChild(topSubjectTag(subject));
+        row.appendChild(el('span', 'goal-name', t.label));
+        row.appendChild(topBar(t.done / Math.max(t.goal, 1)));
+        row.appendChild(el('span', 'goal-left', reached ? '✓ 届いた' : `あと${t.goal - t.done}${t.unit}`));
+        box.appendChild(row);
+      })
+  );
+}
+
+// カードを押すと、振り返りを開く（計画があれば「計画」の表示）
+$('week-card').addEventListener('click', () => openReview('summary', topProgress() ? 'plan' : 'band'));
 
 // --- 今週がんばること（決めた1つは、変えるまで続く。TOP と振り返りから同じダイアログで決める） ---
 function currentChange() {
