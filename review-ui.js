@@ -7,9 +7,8 @@ let reviewDoneView = 'band'; // まとめの表示：band＝時間（時間帯�
 let reviewRangeFailed = false; // 表示する期間の記録を取れなかった
 
 // 開いたときは、その場で同期する
-function openReview(tab, view) {
+function openReview(tab) {
   reviewTab = tab || 'summary';
-  if (view) reviewDoneView = view;
   reviewWeek = startOfWeekStr(parseDate(todayStr()));
   resetReviewDetail();
   renderReview();

@@ -107,109 +107,91 @@ h2 {
   border-radius: 12px;
   padding: 4px 14px 12px;
   margin-bottom: 14px;
-  cursor: pointer;
 }
 
 .week-card h2 {
-  margin: 10px 0 4px;
+  margin-top: 10px;
 }
 
-.week-head {
+.week-numbers {
   display: flex;
-  align-items: baseline;
+  gap: 24px;
+  margin-bottom: 10px;
+}
+
+.week-numbers span {
+  display: block;
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.week-numbers small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+/* 計画の進み（進捗率） */
+.top-plan {
+  border-top: 1px solid #eee;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.top-plan-head {
+  display: flex;
   justify-content: space-between;
-  gap: 8px;
-}
-
-.week-facts {
-  font-size: 13px;
-  color: var(--color-muted);
-}
-
-.week-sub {
+  align-items: baseline;
   font-size: 12px;
-  font-weight: bold;
   color: var(--color-muted);
-  margin: 10px 0 2px;
-}
-
-.week-more {
-  text-align: right;
-  margin-top: 4px;
-}
-
-.week-more .btn {
-  padding: 4px 0;
-}
-
-.top-today {
-  background: var(--color-good-bg);
-  border-radius: 8px;
-  padding: 6px 10px 8px;
-  margin: 6px 0 8px;
-}
-
-.top-today-label {
-  font-size: 12px;
-  font-weight: bold;
-  color: var(--color-good);
   margin-bottom: 4px;
 }
 
-.top-today-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 14px;
+.top-plan-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--color-text);
 }
 
-.top-today-item {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 6px;
-}
-
-.top-today-item .is-done {
-  color: var(--color-good);
-}
-
-.goal-row {
+.rate-row {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 76px 84px;
+  grid-template-columns: 76px minmax(0, 1fr) 44px;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 6px 0;
   font-size: 13px;
 }
 
-.goal-row .subj-tag {
-  font-size: 12px;
+.rate-track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: #eee;
 }
 
-.goal-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.goal-row .bar-track {
-  height: 8px;
-}
-
-.goal-left {
-  text-align: right;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.goal-row.is-done .bar-fill {
+.rate-fill {
+  height: 100%;
+  border-radius: 5px;
   background: var(--color-good);
 }
 
-.goal-row.is-done .goal-left {
-  color: var(--color-good);
+.rate-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text);
+}
+
+.rate-value {
+  text-align: right;
   font-weight: bold;
+}
+
+.rate-note {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-left: 84px;
 }
 
 .bar-row {

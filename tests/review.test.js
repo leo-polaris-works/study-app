@@ -433,18 +433,33 @@ test('くわしく見る（量）：テストまでは、周ごとに予定と�
   ]);
 });
 
-test('今日の目安：今日の予定の量と、今日やった量（届いたら reached）', () => {
-  // monthPlan：10/1〜10/30、理科ワーク300ページ。10/7 の時点で 35ページ → 残り265ページを24日で分ける
+test('進捗率：今週の目標に対する割合と、テストまでの全体のうちやった割合（昨日までの予定の位置つき）', () => {
+  // monthPlan：10/1〜10/30、理科ワーク300ページ（1日10ページ）
   const recs = [
     rec({ date: '2026-10-02', subject: '理科', materials: [['m-sc-work', 'ワーク', 10, 'ページ']] }),
     rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 25, 'ページ']] }),
   ];
-  const guide = (list) => plain(ctx.todayGuide(ctx.planProgress(monthPlan(), list, WEEK, '2026-10-07')));
-  assert.deepStrictEqual(guide(recs), [{ subject: '理科', label: 'ワーク', unit: 'ページ', amount: 11, done: 0, reached: false }]);
-  const more = recs.concat([rec({ date: '2026-10-07', subject: '理科', materials: [['m-sc-work', 'ワーク', 12, 'ページ']] })]);
-  assert.deepStrictEqual(guide(more), [{ subject: '理科', label: 'ワーク', unit: 'ページ', amount: 11, done: 12, reached: true }], '今日やった量は、今日の目安を変えない');
-  // テストが終わった後は出さない
-  assert.deepStrictEqual(plain(ctx.todayGuide(ctx.planProgress(monthPlan({ testDate: '2026-10-06' }), recs, WEEK, '2026-10-07'))), []);
+  const rates = (plan, list, today) => plain(ctx.progressRates(ctx.planProgress(plan, list, WEEK, today)));
+  // 10/7：今週の目標75ページに25ページ。全体300のうち35。昨日（10/6）までの予定は60
+  assert.deepStrictEqual(rates(monthPlan(), recs, '2026-10-07'), { week: 33, total: 12, planned: 20 });
+  // 今週の目標に届いたら100%（こえても100%）
+  const more = recs.concat([rec({ date: '2026-10-07', subject: '理科', materials: [['m-sc-work', 'ワーク', 90, 'ページ']] })]);
+  assert.deepStrictEqual(rates(monthPlan(), more, '2026-10-07'), { week: 100, total: 42, planned: 20 });
+
+  // 単位が違う教材は、目安の時間に直して足す（ページ＝6分、語＝0.5分）：ワーク0/70ページ（420分）・単語140/140語（70分）→ 70÷490
+  const two = monthPlan({
+    items: [
+      { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 300, laps: 1, lapMarks: [] },
+      { materialId: 'm-en-word', subject: '英語', label: '単語', unit: '語', amount: 600, laps: 1, lapMarks: [] },
+    ],
+  });
+  const words = [rec({ date: '2026-10-05', subject: '英語', materials: [['m-en-word', '単語', 140, '語']] })];
+  assert.strictEqual(rates(two, words, '2026-10-12').week, 14);
+  // 99.6% は 100% にしない
+  const almost = [rec({ date: '2026-10-05', subject: '理科', materials: [['m-sc-work', 'ワーク', 299, 'ページ']] })];
+  assert.strictEqual(rates(monthPlan(), almost, '2026-10-07').total, 99);
+  // 計画の初日は、昨日までの予定がない
+  assert.strictEqual(rates(monthPlan(), [], '2026-10-01').planned, 0);
 });
 
 (async () => {
