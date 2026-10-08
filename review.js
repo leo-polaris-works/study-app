@@ -166,7 +166,7 @@ function planProgress(plan, records, weekStart, today) {
   const name = (i) => ({ subject: result.items[i].subject, label: result.items[i].label, unit: result.items[i].unit, materialId: result.items[i].materialId });
   const targets = weekTargets(result, weekStart)
     .filter((x) => x.amount > 0.05)
-    .map((x) => Object.assign(name(x.item), { item: x.item, goal: roundAmount(x.amount), done: Math.round(x.done), laps: x.laps }));
+    .map((x) => Object.assign(name(x.item), { item: x.item, goal: roundAmount(x.amount), done: Math.round(x.done), laps: x.laps, minutes: x.minutes }));
   const perDay = {};
   dayTargets(result, asOf).forEach((x) => (perDay[x.item] = roundAmount(x.amount)));
   const status = lagStatus(result);
@@ -186,16 +186,22 @@ function planProgress(plan, records, weekStart, today) {
   return { plan, result, asOf, targets, behind, ahead, adjust, daysLeft: daysUntil(today, plan.testDate) };
 }
 
-// 今日の目安：今日の予定の量と、今日やった量（教材ごと）
-function todayGuide(progress) {
-  return dayTargets(progress.result, progress.asOf)
-    .filter((x) => x.amount > 0.05)
-    .map((x) => {
-      const it = progress.result.items[x.item];
-      const done = it.byDate[progress.asOf] || 0;
-      const amount = roundAmount(x.amount);
-      return { subject: it.subject, label: it.label, unit: it.unit, amount, done, reached: done >= amount };
-    });
+// 進捗率（%）。単位が違う教材をまとめるため、目安の時間に直して足す。
+// week＝今週の目標に対してやった割合（教材ごとに100%まで）。total＝テストまでの全体のうちやった割合。planned＝昨日までの予定の位置
+function progressRates(progress) {
+  const pct = (x) => (x >= 1 ? 100 : Math.min(99, Math.round(Math.max(0, x) * 100)));
+  const goal = progress.targets.reduce((a, t) => a + t.minutes, 0);
+  const done = progress.targets.reduce((a, t) => a + Math.min(1, t.done / t.goal) * t.minutes, 0);
+  const cum = progress.result.cumulative;
+  const all = cum.length ? cum[cum.length - 1].planned : 0;
+  const at = (date) => cum.filter((d) => d.date <= date).pop();
+  const now = at(progress.asOf);
+  const before = at(shiftDate(progress.asOf, -1));
+  return {
+    week: goal > 0 ? pct(done / goal) : null,
+    total: all > 0 && now ? pct(now.actual / all) : 0,
+    planned: all > 0 && before ? pct(before.planned / all) : 0,
+  };
 }
 
 // --- 気づき（最大 maxInsights。優先の小さい順） ---
