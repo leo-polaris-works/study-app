@@ -131,7 +131,7 @@ function renderPlanEdit() {
   basic.appendChild(labeled('テスト日', textInput(p.testDate, onDate('testDate'), 'date')));
   basic.appendChild(labeled('計画の開始日', textInput(p.startDate, onDate('startDate'), 'date')));
 
-  const range = editSection(body, '範囲', '教材ごとに、テスト範囲の量と周回数');
+  const range = editSection(body, '範囲', '教材ごとに、テスト範囲の量と周回数。範囲の発表前は空けたまま保存でき、TOP にテストまでの日数が出ます');
   SUBJECTS.forEach((subject) => {
     const block = el('div', 'plan-subject');
     block.appendChild(el('div', 'plan-subject-name', subject));
@@ -217,7 +217,6 @@ function validatePlan(p) {
   if (!p.name) return 'テストの名前を入れてください';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.testDate) || !/^\d{4}-\d{2}-\d{2}$/.test(p.startDate)) return '日付を入れてください';
   if (p.startDate >= p.testDate) return '開始日はテスト日より前にしてください';
-  if (!p.items.length) return '範囲の教材を1つ以上入れてください';
   if (p.items.some((it) => !(it.amount > 0))) return '範囲の量が入っていない教材があります';
   if (p.items.some((it) => !(it.laps >= 1 && it.laps <= 10))) return '周回数は1〜10にしてください';
   if (monthTotal(p) !== 100) return '月ごとの割合を、合計100%にしてください';
@@ -294,9 +293,15 @@ function renderPlanResult() {
     body.appendChild(el('div', 'field-note', 'この計画は削除されました'));
     return;
   }
-  const today = todayStr();
-  const result = computePlan(plan, loadActiveRecords(), today);
   $('plan-result-title').textContent = plan.name;
+  const today = todayStr();
+  if (!plan.items.length) {
+    const left = daysUntil(today, plan.testDate);
+    body.appendChild(el('div', 'review-facts', left > 0 ? `テストまで あと${left}日` : left === 0 ? 'テストは今日' : 'テストは終わりました'));
+    body.appendChild(el('div', 'field-note', '範囲がまだ入っていません。範囲が発表されたら「直す」から教材と量を入れると、周回と目標が出ます'));
+    return;
+  }
+  const result = computePlan(plan, loadActiveRecords(), today);
   if (planRangeFailed) body.appendChild(el('div', 'field-note', LOCAL_ONLY_NOTE));
 
   renderPlanStatus(body, result, today);

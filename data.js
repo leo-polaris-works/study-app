@@ -490,7 +490,9 @@ function seedSampleData() {
     { d: -2, band: ['tb-night', '夜'], subject: '理科', activity: ['a-review-past', '復習（先週以前）'], minutes: 30, fields: [['f-sc-chem', '化学', 30]], materials: [['m-sc-work', 'ワーク', 3, 'ページ']], accuracy: acc(3), issues: [['i-before', '前の内容があやしい']], unclear: '化学変化と質量の計算', resolved: -1 },
     { d: -3, band: ['tb-morning', '朝'], subject: '英語', activity: ['a-review-week', '復習（今週の授業）'], minutes: 15, fields: [['f-en-word', '単語・熟語', 15]], materials: [['m-en-word', '単語', 30, '語']], accuracy: null, issues: [] },
     { d: -4, band: ['tb-night', '夜'], subject: '数学', activity: ['a-hw', '宿題・提出物'], minutes: 45, fields: [['f-ma-figure', '図形', 45]], materials: [['m-ma-hw', '宿題', 4, 'ページ']], accuracy: acc(2), issues: [['i-again', 'また間違えた']] },
+    { d: -5, band: ['tb-night', '夜'], subject: '国語', activity: ['a-pre', '予習'], minutes: 60, fields: [['f-jp-reading', '読解', 60]], materials: [['m-jp-work', 'ワーク', 15, 'ページ']], accuracy: acc(3), issues: [] },
     { d: -6, band: ['tb-evening', '夕方'], subject: '国語', activity: ['a-hw', '宿題・提出物'], minutes: 30, fields: [['f-jp-kanji', '漢字', 30]], materials: [['m-jp-kanji', '漢字', 50, '字']], accuracy: acc(4), issues: [] },
+    { d: -7, band: ['tb-night', '夜'], subject: '国語', activity: ['a-pre', '予習'], minutes: 40, fields: [['f-jp-reading', '読解', 40]], materials: [['m-jp-work', 'ワーク', 10, 'ページ']], accuracy: acc(3), issues: [] },
     { d: -8, band: ['tb-night', '夜'], subject: '数学', activity: ['a-test', 'テスト対策'], minutes: 40, fields: [['f-ma-figure', '図形', 40]], materials: [['m-ma-redo', '解き直し', 10, '問題']], accuracy: acc(2), issues: [] },
     { d: -9, band: ['tb-night', '夜'], subject: '英語', activity: ['a-hw', '宿題・提出物'], minutes: 30, fields: [['f-en-grammar', '文法', 30]], materials: [['m-en-hw', '宿題', 3, 'ページ']], accuracy: acc(3), issues: [] },
     { d: -10, band: ['tb-night', '夜'], subject: '理科', activity: ['a-test', 'テスト対策'], minutes: 40, fields: [['f-sc-chem', '化学', 40]], materials: [['m-sc-work', 'ワーク', 4, 'ページ']], accuracy: acc(3), issues: [] },
@@ -520,7 +522,8 @@ function seedSampleData() {
   });
   writeRecords(records);
 
-  // 計画は端末内に置くだけ（送信待ちに入れない）
+  // 計画は端末内に置くだけ（送信待ちに入れない）。周回の表の見本：理科＝1周目が終わって2周目／英語 単語＝もうすぐ（行を押すか、単語を記録すると「終わった？」）／
+  // 数学＝大きく遅れている／国語＝あと少しで9割（ワークを3ページ以上記録すると、登録結果で「終わった？」と聞く）
   const start = shiftDate(today, -14);
   const testDate = shiftDate(today, 28);
   const now = localIso();
@@ -531,8 +534,9 @@ function seedSampleData() {
     testDate,
     startDate: start,
     items: [
-      { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 60, laps: 3, lapMarks: [] },
-      { materialId: 'm-en-word', subject: '英語', label: '単語', unit: '語', amount: 120, laps: 3, lapMarks: [] },
+      { materialId: 'm-jp-work', subject: '国語', label: 'ワーク', unit: 'ページ', amount: 30, laps: 2, lapMarks: [] },
+      { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 60, laps: 3, lapMarks: [{ lap: 1, date: shiftDate(today, -1), nextAmount: 20 }] },
+      { materialId: 'm-en-word', subject: '英語', label: '単語', unit: '語', amount: 100, laps: 3, lapMarks: [] },
       { materialId: 'm-ma-work', subject: '数学', label: 'ワーク', unit: 'ページ', amount: 40, laps: 3, lapMarks: [] },
     ],
     months: defaultPlanMonths(start, testDate),

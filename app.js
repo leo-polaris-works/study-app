@@ -22,7 +22,7 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach((s) => {
     s.hidden = s.id !== id;
   });
-  $('change-dialog').hidden = true;
+  $('lap-dialog').hidden = true;
   window.scrollTo(0, 0);
 }
 
@@ -71,18 +71,246 @@ function renderTop() {
   $('admin-heading').hidden = !anyAdmin;
   $('admin-menu').hidden = !anyAdmin;
   renderSyncLine();
-
-  renderTopChange();
-
-  renderTopWeek();
+  renderTopWeek(renderTopPlanArea());
 }
 
-// --- 今週のカード：合計時間・記録した日・教科ごとの時間。計画があれば、下に進捗率を2つ（今週の目標・テストまで） ---
-function renderTopWeek() {
+// --- TOP：テストまでの日数・計画（周回の表／今週のワーク）・今週のカード ---
+// 計画は、今日がテスト日までに入るもの（テストが近い順）。テスト日だけで範囲（教材）がない計画もある
+function currentPlan(today) {
+  return (
+    loadActivePlans()
+      .filter((p) => p.startDate <= today && p.testDate >= today)
+      .sort((a, b) => (a.testDate < b.testDate ? -1 : a.testDate > b.testDate ? 1 : 0))[0] || null
+  );
+}
+
+function renderTopPlanArea() {
+  const today = formatDate(new Date());
+  const plan = currentPlan(today);
+  const records = loadActiveRecords();
+  const noplan = $('top-noplan');
+  const count = $('top-count');
+  const box = $('top-plan');
+  [noplan, count, box].forEach((x) => (x.innerHTML = ''));
+  noplan.hidden = !!plan;
+  count.hidden = !plan;
+  if (!plan) {
+    const admin = loadFeatures().admin;
+    noplan.appendChild(el('div', null, admin ? '次のテストの計画がまだありません' : '次のテストの計画はまだありません'));
+    if (admin) noplan.appendChild(smallButton('学習計画を作る', () => openPlanEdit(newPlan())));
+    renderWeekWork(box, records, today);
+    return null;
+  }
+  const left = daysUntil(today, plan.testDate);
+  count.appendChild(el('div', 'top-count-name', `${plan.name}（${shortDate(plan.testDate)}）まで`));
+  const n = el('div', 'top-count-num');
+  if (left > 0) {
+    n.appendChild(el('span', null, 'あと'));
+    n.appendChild(el('b', null, String(left)));
+    n.appendChild(el('span', null, '日'));
+  } else n.textContent = 'テストは今日';
+  count.appendChild(n);
+  if (!plan.items.length) {
+    count.appendChild(el('div', 'top-count-sub', '範囲が発表されたら、周回で見られます'));
+    renderWeekWork(box, records, today);
+    return null;
+  }
+  return renderLapTable(box, plan, records, today);
+}
+
+// 今週のワーク：教科ごとに今週やったワークのページ数と前の週（範囲がなくても出せる）
+function renderWeekWork(box, records, today) {
+  const weekStart = startOfWeekStr();
+  const pages = (from, to) => {
+    const out = {};
+    SUBJECTS.forEach((s) => (out[s] = 0));
+    materialTotals(recordsBetween(records, from, to))
+      .filter((m) => /-work$/.test(m.id) && m.unit === 'ページ')
+      .forEach((m) => (out[m.subject] += m.value));
+    return out;
+  };
+  const now = pages(weekStart, shiftDate(weekStart, 6));
+  const prev = pages(shiftDate(weekStart, -7), shiftDate(weekStart, -1));
+  const sum = (o) => SUBJECTS.reduce((a, s) => a + o[s], 0);
+  const head = el('div', 'top-plan-goal');
+  head.appendChild(el('span', null, '今週のワーク '));
+  head.appendChild(el('b', null, String(sum(now))));
+  head.appendChild(el('span', null, `ページ（前の週 ${sum(prev)}）`));
+  box.appendChild(head);
+  const max = Math.max(1, ...SUBJECTS.map((s) => now[s]));
+  SUBJECTS.forEach((s) => {
+    const row = el('div', 'work-row');
+    row.appendChild(el('span', null, s));
+    const track = el('div', 'work-track');
+    const fill = el('i');
+    fill.style.width = `${Math.round((now[s] / max) * 100)}%`;
+    track.appendChild(fill);
+    row.appendChild(track);
+    const v = el('span', 'work-value' + (now[s] ? '' : ' is-zero'), `${now[s]}ページ`);
+    v.appendChild(el('small', null, `前の週 ${prev[s]}`));
+    row.appendChild(v);
+    box.appendChild(row);
+  });
+}
+
+// 周回の今の状態：いま進めている周（「終わった」を付けていない最初の周）と、その周の割合（付けるまでは99%で止める）。
+// 割合は目安。2周目以降は、前の周を終えたときに次の量（×の数）を入れたときだけ測る（measured）。入れていなければ割合を出さない
+function lapState(it) {
+  const k = it.lapsNow.findIndex((l) => !l.marked);
+  if (k < 0) return { lap: null, ratio: 1, done: 0, amount: 0, measured: false };
+  const l = it.lapsNow[k];
+  const prev = k > 0 ? lapMark(it, k) : null;
+  const measured = k === 0 || !!(prev && typeof prev.nextAmount === 'number');
+  return { lap: l.lap, ratio: l.amount > 0 ? l.done / l.amount : 0, done: l.done, amount: l.amount, measured };
+}
+
+function lapItemName(it) {
+  return it.label === 'ワーク' ? it.subject : `${it.subject} ${it.label}`;
+}
+
+// 周回の表：1行が1教材、マス1つが1周。大きく遅れている教材の行だけ色を変える。行を押すと「終わった」を付けられる
+function renderLapTable(box, plan, records, today) {
+  const result = computePlan(plan, records, today);
+  const lags = {};
+  lagStatus(result).forEach((s) => {
+    if (s.ratio !== null && s.ratio < RR.bigLagRatio) lags[s.item] = roundAmount(s.planned - s.done);
+  });
+  const states = result.items.map(lapState);
+  const open = states.filter((x) => x.lap !== null);
+  const head = el('div', 'top-plan-goal');
+  if (!open.length) head.textContent = 'すべての周が終わりました';
+  else {
+    const lap = Math.min(...open.map((x) => x.lap));
+    const maxLaps = Math.max(...result.items.map((it) => it.laps));
+    const deadline = lap === 1 ? result.deadlines[1] : lap < maxLaps ? result.deadlines[2] : result.deadlines[3];
+    const d = Math.max(0, daysUntil(today, deadline));
+    head.appendChild(el('span', null, `${lap}周目の目安 `));
+    head.appendChild(el('b', null, shortDate(deadline)));
+    head.appendChild(el('span', null, ` まで（あと${d}日）`));
+  }
+  box.appendChild(head);
+  const writable = !isReadOnly();
+  result.items.forEach((it, i) => {
+    const st = states[i];
+    const late = lags[i] !== undefined && st.lap !== null && st.measured;
+    const row = el(writable ? 'button' : 'div', 'lap-row' + (late ? ' is-late' : ''));
+    if (writable) row.type = 'button';
+    row.appendChild(el('span', 'lap-name', lapItemName(it)));
+    const segs = el('div', 'top-lap-segs');
+    it.lapsNow.forEach((l, k) => {
+      const seg = el('div', 'top-lap-seg' + (l.marked ? ' is-done' : ''));
+      if (!l.marked && k === st.lap - 1 && st.measured && l.amount > 0 && l.done > 0) {
+        const fill = el('i');
+        fill.style.width = `${Math.round(Math.min(0.99, l.done / l.amount) * 100)}%`;
+        seg.appendChild(fill);
+      }
+      segs.appendChild(seg);
+    });
+    row.appendChild(segs);
+    const v = el('span', 'lap-value');
+    if (st.lap === null) v.textContent = '✓ 全部';
+    else if (!st.measured) v.textContent = `${st.lap}周目`;
+    else if (st.ratio >= 1) {
+      v.textContent = `${st.lap}周目 もうすぐ`;
+      if (writable) v.appendChild(el('small', null, '終わったら押す'));
+    } else {
+      v.textContent = `${st.lap}周目 ${Math.round(st.ratio * 100)}%`;
+      if (late) v.appendChild(el('small', null, `予定まで あと${lags[i]}${it.unit}`));
+    }
+    row.appendChild(v);
+    if (writable) row.addEventListener('click', () => openLapDialog(plan.id, i));
+    box.appendChild(row);
+  });
+  if (writable) box.appendChild(el('div', 'field-note', 'マス1つ＝1周。行を押すと「終わった」を付けられる'));
+  return planProgress(plan, records, startOfWeekStr(), today);
+}
+
+// 「○周目が終わった」を付ける・取り消す（計画のファイルを直して送る）
+function setLapMark(planId, index, lap, nextAmount) {
+  const plan = findPlan(planId);
+  if (!plan || isReadOnly()) return;
+  const it = plan.items[index];
+  it.lapMarks = (it.lapMarks || []).filter((m) => m.lap < lap);
+  if (nextAmount !== undefined) it.lapMarks.push({ lap, date: formatDate(new Date()), nextAmount });
+  savePlan(plan);
+  kickSync();
+}
+
+let lapDialog = null; // { planId, index }
+
+function openLapDialog(planId, index) {
+  const plan = findPlan(planId);
+  if (!plan || isReadOnly()) return;
+  lapDialog = { planId, index };
+  const result = computePlan(plan, loadActiveRecords(), formatDate(new Date()));
+  const it = result.items[index];
+  const st = lapState(it);
+  const body = $('lap-dialog-body');
+  body.innerHTML = '';
+  $('lap-dialog-title').textContent = st.lap === null ? `${lapItemName(it)}：すべての周が終わりました` : `${lapItemName(it)} ${st.lap}周目、終わった？`;
+  let input = null;
+  if (st.lap !== null) {
+    if (st.measured) body.appendChild(el('div', 'field-note', `記録からの目安 ${Math.min(99, Math.round(st.ratio * 100))}%（${roundAmount(st.amount)}${it.unit}中 ${Math.round(st.done)}${it.unit}）`));
+    if (planItemKind(it.unit) === 'drill' && st.lap < it.laps) {
+      input = el('input', 'plan-input');
+      input.type = 'number';
+      input.min = '0';
+      input.inputMode = 'numeric';
+      input.setAttribute('aria-label', '次の周でやる量');
+      body.appendChild(el('div', 'field-label', `${st.lap + 1}周目でやる量（×の数。わからなければ空けておく）`));
+      body.appendChild(input);
+    }
+    const acts = el('div', 'lap-dialog-actions');
+    acts.appendChild(smallButton('まだ', closeLapDialog));
+    const done = el('button', 'btn btn-small btn-primary', '終わった');
+    done.type = 'button';
+    done.addEventListener('click', () => {
+      const v = input && input.value !== '' ? Number(input.value) : null;
+      setLapMark(planId, index, st.lap, v !== null && isFinite(v) && v >= 0 ? v : null);
+      closeLapDialog();
+    });
+    acts.appendChild(done);
+    body.appendChild(acts);
+  }
+  const last = (plan.items[index].lapMarks || []).slice(-1)[0];
+  if (last) {
+    body.appendChild(
+      smallButton(
+        `${last.lap}周目の「終わった」を取り消す`,
+        () => {
+          setLapMark(planId, index, last.lap);
+          closeLapDialog();
+        },
+        'btn-link'
+      )
+    );
+  }
+  $('lap-dialog').hidden = false;
+}
+
+function closeLapDialog() {
+  lapDialog = null;
+  $('lap-dialog').hidden = true;
+  if (currentScreen === 'screen-top') renderTop();
+}
+
+$('btn-lap-close').addEventListener('click', closeLapDialog);
+$('lap-dialog').addEventListener('click', (e) => {
+  if (e.target === $('lap-dialog')) closeLapDialog();
+});
+
+// 今週のカード：「今週　○時間○分　○日」、できたこと1行、教科ごとの時間の棒（あいている教科は「○日あき」）
+function renderTopWeek(progress) {
   const s = weekSummary();
   $('week-total').textContent = formatMinutes(s.totalMinutes);
   $('week-days').textContent = `${s.dayCount}日`;
+  const today = formatDate(new Date());
+  const records = loadActiveRecords();
+  const praise = praiseLines(summarizeWeek(records, startOfWeekStr(), today), progress)[0];
+  $('week-praise').hidden = !praise;
+  $('week-praise').textContent = praise || '';
 
+  const gaps = subjectGaps(records, today);
   const box = $('week-subjects');
   box.innerHTML = '';
   const max = Math.max(1, ...Object.values(s.bySubject));
@@ -95,100 +323,12 @@ function renderTopWeek() {
     fill.style.width = `${Math.round((minutes / max) * 100)}%`;
     track.appendChild(fill);
     row.appendChild(track);
-    row.appendChild(el('span', 'bar-value', formatMinutes(minutes)));
+    const v = el('span', 'bar-value', formatMinutes(minutes));
+    if (gaps[name] !== undefined) v.appendChild(el('span', 'bar-gap', gaps[name] === Infinity ? 'しばらくあき' : `${gaps[name]}日あき`));
+    row.appendChild(v);
     box.appendChild(row);
   });
-  renderTopPlan();
 }
-
-// 棒と%の1行。mark は、棒の上に出す印の位置（%）
-function rateRow(label, percent, mark) {
-  const row = el('div', 'rate-row');
-  row.appendChild(el('span', 'rate-name', label));
-  const track = el('div', 'rate-track');
-  const fill = el('div', 'rate-fill');
-  fill.style.width = `${percent}%`;
-  track.appendChild(fill);
-  if (mark) {
-    const m = el('div', 'rate-mark');
-    m.style.left = `${mark}%`;
-    track.appendChild(m);
-  }
-  row.appendChild(track);
-  row.appendChild(el('span', 'rate-value', `${percent}%`));
-  return row;
-}
-
-function renderTopPlan() {
-  const box = $('week-plan');
-  box.innerHTML = '';
-  const weekStart = startOfWeekStr();
-  const plan = planForWeek(loadActivePlans(), weekStart);
-  box.hidden = !plan;
-  if (!plan) return;
-  const progress = planProgress(plan, loadActiveRecords(), weekStart, formatDate(new Date()));
-  const rates = progressRates(progress);
-  const left = progress.daysLeft;
-  const head = el('div', 'top-plan-head');
-  head.appendChild(el('span', 'top-plan-title', '計画の進み'));
-  head.appendChild(el('span', null, left > 0 ? `テストまで あと${left}日` : left === 0 ? 'テストは今日' : 'テストは終わりました'));
-  box.appendChild(head);
-  if (rates.week !== null) box.appendChild(rateRow('今週の目標', rates.week));
-  box.appendChild(rateRow('テストまで', rates.total, rates.planned));
-  if (rates.planned) box.appendChild(el('div', 'rate-note', `印＝きのうまでの予定（${rates.planned}%）`));
-}
-
-// --- 今週がんばること（決めた1つは、変えるまで続く。TOP と振り返りから同じダイアログで決める） ---
-function currentChange() {
-  return changeInEffect(loadReviews(), startOfWeekStr());
-}
-
-// 見るだけの端末では押せない（決めていなければ出さない）
-function renderTopChange() {
-  const change = currentChange();
-  const box = $('top-change');
-  box.innerHTML = '';
-  box.hidden = !change && isReadOnly();
-  box.disabled = isReadOnly();
-  box.appendChild(el('span', 'top-change-label', '今週がんばること'));
-  box.appendChild(el('span', 'top-change-text' + (change ? '' : ' is-empty'), change ? changeText(change) : 'タップして決める'));
-}
-
-function openChangeDialog() {
-  if (isReadOnly()) return;
-  const change = currentChange();
-  const list = $('change-list');
-  list.innerHTML = '';
-  CHANGE_CANDIDATES.forEach((c) => {
-    list.appendChild(makeChip(c.label, !!change && change.id === c.id, () => decideChange({ id: c.id, label: c.label }), 'change-chip'));
-  });
-  const input = $('change-input');
-  input.maxLength = CHANGE_TEXT_MAX;
-  input.placeholder = `自分で書く（${CHANGE_TEXT_MAX}字まで）`;
-  input.value = change && change.id === CHANGE_FREE_ID ? change.text : '';
-  $('btn-change-clear').hidden = !change;
-  $('change-dialog').hidden = false;
-}
-
-function decideChange(change) {
-  if (isReadOnly()) return;
-  saveWeekChange(startOfWeekStr(), change);
-  $('change-dialog').hidden = true;
-  kickSync();
-  if (currentScreen === 'screen-review') renderReview();
-  else renderTop();
-}
-
-$('top-change').addEventListener('click', openChangeDialog);
-$('btn-change-close').addEventListener('click', () => ($('change-dialog').hidden = true));
-$('change-dialog').addEventListener('click', (e) => {
-  if (e.target === $('change-dialog')) $('change-dialog').hidden = true;
-});
-$('btn-change-free').addEventListener('click', () => {
-  const text = $('change-input').value.trim().slice(0, CHANGE_TEXT_MAX);
-  if (text) decideChange({ id: CHANGE_FREE_ID, label: '自分で書く', text });
-});
-$('btn-change-clear').addEventListener('click', () => decideChange(null));
 
 $('menu-record').addEventListener('click', () => {
   if (!isReadOnly()) startInput();
@@ -1016,6 +1156,7 @@ function renderDone(record, updated) {
   $('done-facts').textContent = `${displayDate(record.date)}の合計 ${formatMinutes(dayMinutes)}／今週 ${weekDays}日記録`;
 
   renderDoneSync();
+  renderDoneLap(record);
 
   const img = $('done-illust');
   if (ILLUSTRATIONS.length > 0) {
@@ -1027,6 +1168,51 @@ function renderDone(record, updated) {
   } else {
     img.hidden = true;
   }
+}
+
+// 計画にある教材を記録したら、毎回「今は○周目。終わった？」と聞く（ページ数がずれていても聞く。押さなくても先に進める）
+function lapsToAsk(record) {
+  if (isReadOnly()) return [];
+  const today = formatDate(new Date());
+  const plan = currentPlan(today);
+  if (!plan || !plan.items.length) return [];
+  const ids = (record.materials || []).map((m) => m.id);
+  const result = computePlan(plan, loadActiveRecords(), today);
+  return result.items
+    .filter((it) => ids.includes(it.materialId))
+    .map((it) => ({ plan, it, st: lapState(it) }))
+    .filter((x) => x.st.lap !== null);
+}
+
+function renderDoneLap(record) {
+  const box = $('done-lap');
+  box.innerHTML = '';
+  const list = lapsToAsk(record);
+  box.hidden = !list.length;
+  list.forEach((x) => {
+    const row = el('div', 'done-lap-item');
+    const name = lapItemName(x.it);
+    row.appendChild(el('div', 'done-lap-q', `${name}　今は ${x.st.lap}周目。終わった？`));
+    if (x.st.measured) row.appendChild(el('div', 'field-note', `記録からの目安 ${Math.min(99, Math.round(x.st.ratio * 100))}%`));
+    const acts = el('div', 'lap-dialog-actions');
+    acts.appendChild(
+      smallButton('まだ', () => {
+        row.hidden = true;
+        box.hidden = [...box.children].every((c) => c.hidden);
+      })
+    );
+    const done = el('button', 'btn btn-small btn-primary', '終わった');
+    done.type = 'button';
+    done.addEventListener('click', () => {
+      setLapMark(x.plan.id, x.it.index, x.st.lap, null);
+      row.innerHTML = '';
+      row.appendChild(el('div', 'done-lap-q', `✓ ${name} ${x.st.lap}周目、おつかれさま`));
+      row.appendChild(el('div', 'field-note', '次の周でやる量（×の数）は、TOP の周回の行から入れられます'));
+    });
+    acts.appendChild(done);
+    row.appendChild(acts);
+    box.appendChild(row);
+  });
 }
 
 $('btn-done-again').addEventListener('click', () => {
@@ -1418,6 +1604,9 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('online', kickSync);
 
-renderTop();
-showScreen('screen-top');
-if (!getLockState().locked) kickSync();
+// 最初の表示は、すべてのスクリプトを読み終えてから（最後のスクリプトから呼ぶ。TOP は plan-ui.js の関数も使う）
+function startApp() {
+  renderTop();
+  showScreen('screen-top');
+  if (!getLockState().locked) kickSync();
+}

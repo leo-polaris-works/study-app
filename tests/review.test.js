@@ -115,31 +115,24 @@ test('その週の計画：週にかかる計画のうち、テストが近い�
   assert.strictEqual(ctx.planForWeek([], WEEK), null);
 });
 
-test('計画の遅れ：やった量÷予定が0.6未満は大きな遅れ（優先1）、0.6〜0.85は軽い遅れ（優先4）、0.85以上は出ない', () => {
+test('計画の遅れ：やった量÷予定が0.85未満は遅れ、1.2倍以上は進んでいる', () => {
   const plan = monthPlan();
   // 今日 10/11 → 昨日までの予定は 10日×10ページ＝100ページ
   const at = (pages) => ctx.planProgress(plan, [workDone(pages)], WEEK, SUN);
-  const big = ctx.detectInsights([workDone(59)], WEEK, SUN, at(59));
-  assert.deepStrictEqual(kinds(big), ['lag']);
-  assert.strictEqual(big[0].priority, 1);
-  assert.ok(/理科 ワーク：予定まであと41ページ。1日\d+ページで今月中に追いつけます/.test(big[0].text), big[0].text);
-  assert.strictEqual(ctx.detectInsights([workDone(60)], WEEK, SUN, at(60))[0].priority, 4);
+  assert.strictEqual(at(59).behind[0].deficit, 41);
   assert.strictEqual(at(84).behind.length, 1);
   assert.strictEqual(at(85).behind.length, 0);
   assert.strictEqual(at(120).ahead.length, 1, '1.2倍以上は進んでいる');
   assert.ok(at(120).adjust.some((x) => /かなり進んで/.test(x)));
 });
 
-test('計画の進み：今週の目標とやった量。過去の週は「1日○で追いつける」を出さない', () => {
+test('計画の進み：今週の目標とやった量', () => {
   const plan = monthPlan();
   const recs = [workDone(40), rec({ date: '2026-10-06', subject: '理科', materials: [['m-sc-work', 'ワーク', 12, 'ページ']] })];
   const p = ctx.planProgress(plan, recs, WEEK, SUN);
   assert.strictEqual(p.targets.length, 1);
   assert.strictEqual(p.targets[0].done, 12);
   assert.strictEqual(p.daysLeft, 20);
-  const past = ctx.planProgress(plan, [workDone(10)], '2026-09-28', SUN);
-  const lag = ctx.detectInsights([workDone(10)], '2026-09-28', SUN, past);
-  assert.ok(lag.every((x) => !/追いつけます/.test(x.text)));
 });
 
 test('計画の見直しの目安：先週末と今の両方で大きな遅れなら出る', () => {
@@ -150,74 +143,67 @@ test('計画の見直しの目安：先週末と今の両方で大きな遅れ�
   assert.ok(!p2.adjust.some((x) => /2週続けて/.test(x)), '先週末は遅れていない（40/40）');
 });
 
-test('つまずき①正答率：3回以上で、半分以上が〜50%以下', () => {
-  const r = (level) => rec({ date: '2026-10-06', level, minutes: 20 }); // 空回り（60分）にはかからない
-  assert.deepStrictEqual(kinds(ctx.detectInsights([r(2), r(1), r(4)], WEEK, SUN, null)), ['accuracy']);
-  assert.ok(/数学：正答率50%以下の回が2回（3回中）/.test(ctx.detectInsights([r(2), r(1), r(4)], WEEK, SUN, null)[0].text));
-  assert.deepStrictEqual(kinds(ctx.detectInsights([r(2), r(4), r(4)], WEEK, SUN, null)), []);
-  assert.deepStrictEqual(kinds(ctx.detectInsights([r(2), r(2), rec({ date: '2026-10-06', minutes: 10 })], WEEK, SUN, null)), [], '正答率のある回が2回だけ');
+// ヒントの見本：今日 10/11（日）。どの教科も直近にやっていて、復習もある（どのヒントにもかからない）
+function balanced(o) {
+  return ['国語', '数学', '英語', '理科', '社会'].map((subject, i) =>
+    Object.assign(rec({ date: `2026-10-0${5 + i}`, subject, minutes: 30, materials: i === 0 ? [['m-jp-redo', '解き直し', 3, '問題']] : [] }), o || {})
+  );
+}
+
+test('ヒント：偏りがなければ出さない', () => {
+  assert.deepStrictEqual(kinds(ctx.weekHints(balanced(), WEEK, SUN)), []);
+  assert.deepStrictEqual(kinds(ctx.weekHints([], WEEK, SUN)), [], '記録がなければ出さない');
 });
 
-test('つまずき②空回り：同じ分野に60分以上、正答率の平均が〜50%以下（2件以上）', () => {
-  const r = (minutes, level) => rec({ date: '2026-10-06', subject: '理科', field: 'f-sc-chem', fieldLabel: '化学', minutes, level });
-  const hit = ctx.detectInsights([r(30, 2), r(30, 2), rec({ date: '2026-10-07', subject: '国語' })], WEEK, SUN, null);
-  assert.deepStrictEqual(kinds(hit), ['spin']);
-  assert.ok(/理科 化学に1時間/.test(hit[0].text));
-  assert.deepStrictEqual(kinds(ctx.detectInsights([r(30, 2), r(29, 2), rec({ date: '2026-10-07', subject: '国語' })], WEEK, SUN, null)), []);
+test('ヒント①教科の空き：最後の記録から7日以上の教科（長い順に2つまで1行で）。記録がない教科は「しばらく」。直近14日の記録が3件未満なら見ない', () => {
+  const recs = balanced().filter((r) => r.subject !== '理科' && r.subject !== '社会');
+  recs.push(rec({ date: '2026-10-04', subject: '理科' })); // 7日前
+  const x = ctx.weekHints(recs, WEEK, SUN);
+  assert.strictEqual(x[0].kind, 'gap');
+  assert.strictEqual(x[0].text, '社会がしばらく、理科が7日あいています。10分だけでも');
+  recs.push(rec({ date: '2026-10-05', subject: '社会' })); // 6日前
+  assert.strictEqual(ctx.weekHints(recs, WEEK, SUN)[0].text, '理科が7日あいています。10分だけでも');
+  assert.deepStrictEqual(kinds(ctx.weekHints([rec({ date: '2026-10-06' }), rec({ date: '2026-10-07' })], WEEK, SUN)).filter((k) => k === 'gap'), [], '2件では見ない');
+  assert.ok(!kinds(ctx.weekHints(recs, WEEK, '2026-10-10')).includes('gap'), '日数は今日から数える（10/10 なら理科は6日）');
 });
 
-test('つまずき③同じ課題が3回：わからなかった→ノートへ、やり方・復習→思い出す、体調→教科をまたいで', () => {
-  const r = (subject, id, label) => rec({ date: '2026-10-06', subject, issues: [[id, label]] });
-  const again = [1, 2, 3].map(() => r('数学', 'i-again', 'また間違えた'));
-  const x = ctx.detectInsights(again, WEEK, SUN, null);
+test('ヒント②教科の偏り：今週の時間の半分以上が1教科（今週60分以上のとき）', () => {
+  const recs = balanced();
+  recs.push(rec({ date: '2026-10-09', subject: '英語', minutes: 120 })); // 英語150分／計270分
+  const x = ctx.weekHints(recs, WEEK, SUN);
+  assert.deepStrictEqual(kinds(x), ['bias']);
+  assert.strictEqual(x[0].text, '今週は英語が半分以上。ほかの教科も少し');
+  const small = [rec({ date: '2026-10-06', subject: '英語', minutes: 50 })];
+  assert.ok(!kinds(ctx.weekHints(small, WEEK, SUN)).includes('bias'), '今週が60分未満なら見ない');
+});
+
+test('ヒント③復習が少ない：今週3回以上記録して、復習（今週の授業・先週以前）も解き直しもない', () => {
+  const recs = balanced().map((r) => Object.assign(r, { materials: [] }));
+  const x = ctx.weekHints(recs, WEEK, SUN);
   assert.deepStrictEqual(kinds(x), ['review']);
-  assert.ok(/数学：「また間違えた」が3回/.test(x[0].text));
-  assert.deepStrictEqual(kinds(ctx.detectInsights(again.slice(0, 2).concat([rec({ date: '2026-10-06' })]), WEEK, SUN, null)), []);
-
-  const unclear = ctx.detectInsights([1, 2, 3].map(() => r('理科', 'i-nounder', 'そもそも分からない')), WEEK, SUN, null);
-  assert.strictEqual(unclear[0].kind, 'unclear');
-  assert.strictEqual(unclear[0].link, 'note');
-
-  const sleepy = ctx.detectInsights([r('数学', 'i-sleepy', '眠い・疲れた'), r('英語', 'i-sleepy', '眠い・疲れた'), r('理科', 'i-sleepy', '眠い・疲れた')], WEEK, SUN, null);
-  assert.deepStrictEqual(kinds(sleepy), ['condition']);
+  assert.strictEqual(x[0].text, '今週は復習の記録がありません。×の解き直しを1つ');
+  recs[0].activity = { id: 'a-review-past', label: '復習（先週以前）' };
+  assert.deepStrictEqual(kinds(ctx.weekHints(recs, WEEK, SUN)), [], '復習の記録があれば出さない');
+  assert.deepStrictEqual(kinds(ctx.weekHints(recs.slice(1, 3), WEEK, SUN)).filter((k) => k === 'review'), [], '2回では見ない');
 });
 
-test('教科の抜け：直近14日に5件以上あって0件の教科。14日より前の記録は数えない', () => {
-  const days = ['2026-09-28', '2026-10-01', '2026-10-05', '2026-10-06', '2026-10-07'];
-  const five = days.map((date, i) => rec({ date, subject: ['国語', '数学', '英語', '理科', '数学'][i] }));
-  const x = ctx.detectInsights(five, WEEK, SUN, null);
-  assert.deepStrictEqual(plain(x.map((i) => i.subject)), ['社会']);
-  assert.ok(/社会：この2週間、記録がありません/.test(x[0].text));
-  assert.deepStrictEqual(kinds(ctx.detectInsights(five.slice(1), WEEK, SUN, null)), [], '4件では出さない');
-  const old = [rec({ date: '2026-09-27', subject: '国語' })].concat(five.slice(1));
-  assert.deepStrictEqual(kinds(ctx.detectInsights(old, WEEK, SUN, null)), [], '9/27 は14日の外');
+test('ヒント④時間の減少：週が終わってから、先週120分以上で今週がその半分未満', () => {
+  const last = ['国語', '数学', '英語', '理科', '社会'].map((subject, i) => rec({ date: `2026-09-${29 + (i % 2)}`, subject, minutes: 40 })); // 先週200分
+  const recs = last.concat(balanced({ totalMinutes: 15 })); // 今週75分
+  const x = ctx.weekHints(recs, WEEK, SUN);
+  assert.deepStrictEqual(kinds(x), ['drop']);
+  assert.strictEqual(x[0].text, '今週は1時間15分（先週は3時間20分）。忙しかった週？');
+  assert.ok(!kinds(ctx.weekHints(recs, WEEK, '2026-10-10')).includes('drop'), '土曜はまだ出さない');
 });
 
-test('量の減少：週が終わってから、先週120分以上で今週がその半分未満', () => {
+test('ヒントは優先の順（空き→偏り→復習→減少）に最大2つ', () => {
   const recs = [
-    rec({ date: '2026-09-29', subject: '数学', minutes: 60 }),
-    rec({ date: '2026-09-30', subject: '英語', minutes: 60 }),
-    rec({ date: '2026-10-01', subject: '理科', minutes: 40 }),
-    rec({ date: '2026-10-06', subject: '数学', minutes: 30 }),
-    rec({ date: '2026-10-07', subject: '英語', minutes: 30 }),
+    rec({ date: '2026-10-06', subject: '英語', minutes: 60 }),
+    rec({ date: '2026-10-07', subject: '英語', minutes: 60 }),
+    rec({ date: '2026-10-08', subject: '数学', minutes: 30 }),
   ];
-  const sunday = ctx.detectInsights(recs, WEEK, SUN, null);
-  assert.ok(sunday.some((x) => x.kind === 'drop' && /今週は1時間（先週は2時間40分）/.test(x.text)));
-  assert.ok(!ctx.detectInsights(recs, WEEK, '2026-10-10', null).some((x) => x.kind === 'drop'), '土曜はまだ出さない');
-  recs.push(rec({ date: '2026-10-08', subject: '理科', minutes: 20 }));
-  assert.ok(!ctx.detectInsights(recs, WEEK, SUN, null).some((x) => x.kind === 'drop'), '半分（80分）以上なら出ない');
-});
-
-test('気づきは優先順に最大3つ。記録が3件未満なら計画の遅れだけ', () => {
-  const plan = monthPlan();
-  const r = (subject, level) => rec({ date: '2026-10-06', subject, level, issues: [['i-again', 'また間違えた']] });
-  const recs = [workDone(10), r('数学', 1), r('数学', 1), r('数学', 1), r('英語', 1), r('英語', 1), r('英語', 1)];
-  const x = ctx.detectInsights(recs, WEEK, SUN, ctx.planProgress(plan, recs, WEEK, SUN));
-  assert.strictEqual(x.length, 3);
-  assert.deepStrictEqual(kinds(x), ['lag', 'accuracy', 'accuracy']);
-
-  const few = [workDone(10), rec({ date: '2026-10-06', level: 1 })];
-  assert.deepStrictEqual(kinds(ctx.detectInsights(few, WEEK, SUN, ctx.planProgress(plan, few, WEEK, SUN))), ['lag']);
+  const x = ctx.weekHints(recs, WEEK, SUN);
+  assert.deepStrictEqual(kinds(x), ['gap', 'bias'], '復習なしは3つ目なので出さない');
 });
 
 test('がんばること：決めた1つは、変えるまで次の週にも続く。取り消すと、その週から「決めていない」になる', () => {

@@ -195,31 +195,22 @@ const PLAN_DEFAULTS = {
 
 const PHASE_LABELS = { 1: '1周目', 2: '解き直し', 3: '仕上げ' };
 
-// 振り返りの気づきの判定。考え方は非公開側の設計文書にある
+// 振り返り・TOP のヒントの判定。考え方は非公開側の設計文書にある
 const REVIEW_RULES = {
-  windowDays: 14, // つまずき・抜けを見る期間
-  minRecords: 3, // これより記録が少なければ、計画の遅れだけを見る
+  windowDays: 14, // 教科の空きを見るのは、この期間に記録が minRecords 以上あるとき
+  minRecords: 3,
   bigLagRatio: 0.6, // やった量÷予定がこれ未満なら、大きな遅れ
   aheadRatio: 1.2, // これ以上なら、予定より進んでいる
-  lowLevel: 2, // 正答率の段階がこれ以下を「低い」とする（〜50%）
-  spinMinutes: 60, // 同じ分野にこれ以上かけても正答率が低いままなら、空回り
-  spinRecords: 2,
-  repeatIssue: 3, // 同じ課題がこの回数以上
-  gapRecords: 5, // 期間の記録がこれ以上あるのに0件の教科を「抜け」とする
+  gapDays: 7, // 最後の記録からこの日数以上たった教科を「空き」とする
+  biasRatio: 0.5, // 今週の時間のうち1教科がこの割合以上なら「偏り」
+  biasMinMinutes: 60, // 今週がこれ以上のときだけ、偏りを見る
+  reviewActivities: ['a-review-week', 'a-review-past'], // 復習にあたる「やったこと」
   dropRatio: 0.5, // 今週の合計が先週のこの割合未満なら、量の減少
   dropMinMinutes: 120, // 先週がこれ以上のときだけ、量の減少を見る
   increaseMinutes: 15, // 先週よりこれ以上ふえた教科を、できたことに出す
-  maxInsights: 3,
+  maxHints: 2,
   maxPraise: 3,
 };
 
-// 今週がんばること（決まった候補）
-const CHANGE_CANDIDATES = [
-  { id: 'c-word-5', label: '単語1日5語' },
-  { id: 'c-bedtime-memo', label: '寝る前10分暗記' },
-  { id: 'c-daily', label: '毎日、ワークを少しでも進める' },
-  { id: 'c-behind-first', label: '遅れている教材から先にやる' },
-  { id: 'c-on-time', label: '毎日計画の時間通り勉強する' },
-];
+// 今週がんばること（前の版で決めたデータを読むため。画面には出さない）
 const CHANGE_FREE_ID = 'c-free'; // 自分で書いたもの
-const CHANGE_TEXT_MAX = 30;
