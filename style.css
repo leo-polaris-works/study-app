@@ -109,94 +109,231 @@ h2 {
   margin-bottom: 14px;
 }
 
-.week-card h2 {
-  margin-top: 10px;
+.week-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 10px 0 8px;
 }
 
-.week-numbers {
-  display: flex;
-  gap: 24px;
+.week-head h2 {
+  margin: 0;
+}
+
+.week-total {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.week-days {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.week-praise {
+  font-size: 14px;
+  color: var(--color-good);
+  margin: -2px 0 8px;
+}
+
+.week-praise::before {
+  content: "✓ ";
+  font-weight: bold;
+}
+
+.bar-gap {
+  margin-left: 4px;
+  color: #b45309;
+  font-weight: bold;
+}
+
+/* テストまでの日数 */
+.top-count {
+  text-align: center;
+  margin: 2px 0 10px;
+}
+
+.top-count-name {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.top-count-num {
+  font-size: 17px;
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.top-count-num b {
+  font-size: 38px;
+  margin: 0 3px;
+}
+
+.top-count-sub {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.top-noplan {
+  text-align: center;
+  font-size: 14px;
+  color: #555;
+  background: #f2f3f5;
+  border-radius: 12px;
+  padding: 8px 12px;
   margin-bottom: 10px;
 }
 
-.week-numbers span {
-  display: block;
-  font-size: 22px;
-  font-weight: bold;
+.top-noplan .btn {
+  margin-top: 6px;
 }
 
-.week-numbers small {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-/* 計画の進み（進捗率） */
+/* 計画の枠：周回の表・今週のワーク */
 .top-plan {
-  border-top: 1px solid #eee;
-  margin-top: 10px;
-  padding-top: 8px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 8px 12px 10px;
+  margin-bottom: 14px;
 }
 
-.top-plan-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 12px;
-  color: var(--color-muted);
-  margin-bottom: 4px;
+.top-plan-goal {
+  font-size: 14px;
+  margin-bottom: 6px;
 }
 
-.top-plan-title {
-  font-size: 13px;
-  font-weight: bold;
-  color: var(--color-text);
+.top-plan-goal b {
+  font-size: 16px;
 }
 
-.rate-row {
+.work-row,
+.lap-row {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(36px, max-content) minmax(60px, 1fr) max-content;
   align-items: center;
   gap: 8px;
-  margin: 6px 0;
   font-size: 13px;
+  margin: 4px 0;
 }
 
-.rate-track {
-  position: relative;
+.work-track {
   height: 10px;
   border-radius: 5px;
   background: #eee;
+  overflow: hidden;
 }
 
-.rate-fill {
+.work-track i {
+  display: block;
   height: 100%;
-  border-radius: 5px;
   background: var(--color-good);
 }
 
-.rate-mark {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 2px;
-  margin-left: -1px;
-  background: var(--color-text);
+.work-value,
+.lap-value {
+  text-align: right;
+  white-space: nowrap;
 }
 
-.rate-value {
-  text-align: right;
+.work-value small,
+.lap-value small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-muted);
+  font-weight: normal;
+}
+
+.work-value.is-zero {
+  color: #b45309;
   font-weight: bold;
 }
 
-.rate-note {
-  font-size: 11px;
-  color: var(--color-muted);
-  margin-left: 84px;
+.lap-row {
+  width: calc(100% + 12px);
+  margin: 2px -6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+}
+
+button.lap-row {
+  cursor: pointer;
+}
+
+.lap-row.is-late {
+  background: #fff3dc;
+}
+
+.lap-row.is-late .lap-value {
+  color: #b45309;
+  font-weight: bold;
+}
+
+.top-lap-segs {
+  display: flex;
+  gap: 3px;
+}
+
+.top-lap-seg {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 3px;
+  background: #eee;
+  overflow: hidden;
+}
+
+.top-lap-seg i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--color-good);
+}
+
+.top-lap-seg.is-done {
+  background: var(--color-good);
+}
+
+.lap-row.is-late .top-lap-seg i {
+  background: #d98a2b;
+}
+
+.lap-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+
+/* 登録結果：周回が終わったか聞く */
+.done-lap {
+  text-align: left;
+  background: var(--color-good-bg);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+}
+
+.done-lap-item + .done-lap-item {
+  border-top: 1px solid #cfe8e2;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.done-lap-q {
+  font-weight: bold;
+  margin-bottom: 4px;
 }
 
 .bar-row {
   display: grid;
-  grid-template-columns: 44px 1fr 70px;
+  grid-template-columns: 44px minmax(60px, 1fr) max-content;
   align-items: center;
   gap: 8px;
   margin: 4px 0;
@@ -216,7 +353,9 @@ h2 {
 }
 
 .bar-value {
+  min-width: 70px;
   text-align: right;
+  white-space: nowrap;
   color: var(--color-muted);
 }
 
@@ -1277,28 +1416,6 @@ h2 {
   padding-top: 2px;
 }
 
-.day-row {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid #eee;
-}
-
-.day-row.is-future .day-row-date {
-  color: var(--color-muted);
-}
-
-.day-row-date {
-  font-size: 13px;
-  font-weight: bold;
-}
-
-.day-row-total {
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
 .day-item {
   display: flex;
   align-items: baseline;
@@ -1319,26 +1436,6 @@ h2 {
 .day-item-value {
   flex: 0 0 auto;
   font-weight: bold;
-}
-
-.day-item-accuracy {
-  flex: 0 0 auto;
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
-.day-record {
-  margin-bottom: 8px;
-}
-
-.day-record-sub {
-  font-size: 12px;
-  color: var(--color-muted);
-  margin-left: 40px;
-}
-
-.day-record-amount {
-  color: var(--color-text);
 }
 
 .issue-subjects {
@@ -1368,49 +1465,6 @@ h2 {
 .review-facts {
   font-size: 14px;
   margin: 6px 0;
-}
-
-.praise-list {
-  list-style: none;
-  padding: 0;
-  margin: 6px 0;
-}
-
-.praise-list li {
-  font-size: 14px;
-  padding: 6px 10px;
-  margin: 4px 0;
-  border-radius: 8px;
-  background: var(--color-good-bg);
-}
-
-.praise-list li::before {
-  content: "✓ ";
-  color: var(--color-good);
-  font-weight: bold;
-}
-
-.review-adjust {
-  font-size: 13px;
-  background: #f1f5fa;
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin: 10px 0 8px;
-}
-
-.review-adjust-q {
-  margin-top: 4px;
-  font-weight: bold;
-}
-
-.praise-list.hint-list li::before {
-  content: none;
-}
-
-.hint-label {
-  font-weight: bold;
-  color: var(--color-good);
-  margin-right: 6px;
 }
 
 .note-subject {
@@ -1454,15 +1508,13 @@ h2 {
   color: var(--color-primary);
 }
 
-/* 振り返り：くわしく見る */
-.detail-period {
-  margin-bottom: 8px;
-}
-
-.detail-period .chip.seg {
-  padding: 8px 4px;
-  font-size: 14px;
-  min-height: 36px;
+/* 振り返り：月・テストまで */
+.week-hint {
+  font-size: 13px;
+  background: #fff3dc;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-top: 8px;
 }
 
 .detail-switch {
@@ -1695,81 +1747,6 @@ h2 {
   font-weight: bold;
 }
 
-.day-card .day-record {
-  margin: 2px 0 4px;
-}
-
-/* 今週がんばること（TOP・振り返りの1行・ダイアログ） */
-.top-change,
-.review-change {
-  display: block;
-  position: relative;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  color: var(--color-text);
-  background: var(--color-good-bg);
-  border: 0;
-  border-radius: 12px;
-  padding: 8px 30px 10px 14px;
-  margin: 0 0 14px;
-}
-
-.review-change {
-  margin-bottom: 10px;
-}
-
-button.top-change:not(:disabled),
-button.review-change {
-  cursor: pointer;
-}
-
-button.top-change:not(:disabled)::after,
-button.review-change::after {
-  content: "›";
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 20px;
-  color: var(--color-good);
-}
-
-.top-change-label,
-.review-change-label {
-  display: block;
-  font-size: 12px;
-  font-weight: bold;
-  color: var(--color-good);
-}
-
-.top-change-text,
-.review-change-text {
-  display: block;
-  font-size: 16px;
-  font-weight: bold;
-  margin-top: 2px;
-}
-
-.top-change-text.is-empty,
-.review-change-text.is-empty {
-  font-weight: normal;
-  color: var(--color-muted);
-}
-
-.seg-badge {
-  display: inline-block;
-  min-width: 18px;
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: bold;
-  background: var(--color-good);
-  color: #fff;
-}
-
 .dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -1795,25 +1772,3 @@ button.review-change::after {
   align-items: center;
 }
 
-.change-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.change-list .chip {
-  text-align: left;
-  border-radius: 10px;
-}
-
-.change-free {
-  display: flex;
-  gap: 8px;
-  margin: 12px 0 8px;
-}
-
-.change-free .change-input {
-  flex: 1;
-  min-width: 0;
-  max-width: none;
-}

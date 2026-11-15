@@ -91,7 +91,7 @@ class El {
 }
 
 function makeUi(server, extra) {
-  const store = new Map();
+  const store = (extra && extra.store) || new Map(); // 端末の保存データ（別の ui から引き継げる）
   const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
   const byId = {};
   const screens = [];
@@ -170,6 +170,7 @@ function makeUi(server, extra) {
   const ui = {
     ctx,
     state,
+    store,
     $: (id) => byId[id],
     visibleScreens: () => screens.filter((s) => !s.hidden).map((s) => Object.keys(byId).find((k) => byId[k] === s)),
     fire: async (target, type) => {
@@ -665,7 +666,7 @@ test('わからなかったところ：「わからなかった」の課題を�
   ui.ctx.goTo('screen-top');
   await ui.$('menu-review').click();
   assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
-  assert.ok(!ui.$('review-panel-summary').hidden && ui.$('review-panel-note').hidden, '最初は今週のまとめ');
+  assert.ok(!ui.$('review-panel-summary').hidden && ui.$('review-panel-note').hidden, '最初は今週');
   await chipByText(ui.$('review-tabs'), 'ノート').click();
   const list = ui.$('review-list');
   assert.ok(/理科（1）/.test(list.textContent) && /化学反応式の係数/.test(list.textContent));
@@ -718,59 +719,49 @@ test('わからなかったところ：書かなければ unclear は付かな�
   assert.ok(!('unclear' in after));
 });
 
-test('振り返り：最初は今週のまとめ。表示を「時間／学習内容／課題／計画」で切り替える。週を戻れ、今週より先には進めない。赤の警告や「未達」は出ない', async () => {
+test('振り返り：最初は今週。上に「勉強した時間」（時間帯×曜日の表）、その下に観点（教科／学習内容／量／課題）。週を戻れ、今週より先には進めない。赤の警告や「未達」は出ない', async () => {
   const ui = makeUi(newServer());
   await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   ui.ctx.seedSampleData();
   await ui.$('menu-review').click();
   const body = ui.$('review-summary-body');
-  const text = body.textContent;
-  // 最初は「時間」：時間帯×曜日の表（7日ぶんの合計つき）と、できたことの文。見出しの横に日数と合計時間
-  const count = (cls) => findAll(ui.$('review-summary-body'), (e) => e.classSet.has(cls)).length;
-  const headText = () => findAll(ui.$('review-summary-body'), (e) => e.classSet.has('review-head'))[0].textContent;
-  assert.ok(/^できたこと\d日・/.test(headText()), headText());
-  assert.ok(/数50/.test(text), text);
+  const count = (cls) => findAll(body, (e) => e.classSet.has(cls)).length;
+  const headText = () => findAll(body, (e) => e.classSet.has('review-head'))[0].textContent;
+  // 勉強した時間：見出しの横に日数と合計時間。時間帯×曜日の表（7日ぶんの合計つき）
+  assert.ok(/^勉強した時間\d日・/.test(headText()), headText());
+  assert.ok(/数50/.test(body.textContent), body.textContent);
   assert.strictEqual(count('band-grid'), 1);
   assert.strictEqual(count('band-total'), 8, '「合計」の見出しと7日ぶん');
-  assert.strictEqual(count('praise-list'), 1);
-  assert.strictEqual(count('hint-card'), 0, '気づきは「計画」に出す');
-  assert.strictEqual(count('subj-legend'), 0, '凡例は出さない');
+  assert.ok(!/ヒント|計画の進み|がんばること/.test(body.textContent), 'ヒント・計画の進み・がんばることは出さない');
 
-  // 「学習内容」：曜日ごとに、記録ごとの3行（やったこと・時間・正答率／学習内容／量）。できたことの文は出さない
-  await chipByText(ui.$('review-summary-body'), '学習内容').click();
-  assert.strictEqual(count('band-grid') + count('praise-list'), 0);
-  assert.strictEqual(count('day-row'), 7);
-  const detail = ui.$('review-summary-body').textContent;
-  assert.ok(/宿題・提出物50分〜90%/.test(detail) && /計算20分・文章題30分/.test(detail) && /宿題 6ページ/.test(detail), detail);
+  // 観点は月・テストまでと同じ。最初は教科
+  assert.deepStrictEqual(
+    findAll(body, (e) => e.classSet.has('seg')).map((e) => e.textContent),
+    ['教科', '学習内容', '量', '課題']
+  );
+  assert.strictEqual(count('subj-row'), 5);
+  const subjectText = body.textContent;
+  assert.ok(/やったことの内訳/.test(subjectText), subjectText);
 
-  // 「課題」：課題ごとの回数と教科
-  await chipByText(ui.$('review-summary-body'), '課題').click();
-  const issueText = ui.$('review-summary-body').textContent;
+  await chipByText(body, '学習内容').click();
+  assert.ok(count('field-row') >= 2 && count('band-grid') === 1);
+  const fieldText = body.textContent;
+
+  await chipByText(body, '量').click();
+  const amountText = body.textContent;
+  assert.ok(/計画：サンプルのテスト/.test(amountText) && /この週の予定に対してやった量/.test(amountText), amountText);
+
+  await chipByText(body, '課題').click();
+  const issueText = body.textContent;
   assert.ok(/そもそも分からない理科\d回/.test(issueText) && /課題なしの記録 \d回/.test(issueText), issueText);
-  assert.strictEqual(count('day-row') + count('band-grid') + count('praise-list'), 0);
+  assert.ok(!/未達|サボ|足りない/.test(subjectText + fieldText + amountText + issueText));
 
-  // 「計画」：計画の進みと気づき。見出しは変わらない
-  const planChip = () => findAll(ui.$('review-summary-body'), (e) => e.classSet.has('seg'))[3];
-  await planChip().click();
-  const planText = ui.$('review-summary-body').textContent;
-  assert.ok(/^できたこと\d日・/.test(headText()));
-  assert.ok(/計画の進み（サンプルのテスト）/.test(planText) && /テストまで あと28日/.test(planText), planText);
-  assert.ok(/ヒント/.test(planText), 'サンプルでは気づきが出る');
-  assert.ok(count('hint-card') >= 1 && count('hint-card') <= 3);
-  assert.strictEqual(count('day-row') + count('band-grid'), 0);
-  assert.ok(findAll(ui.$('review-summary-body'), (e) => e.textContent === '学習計画を開く').length === 0, '管理機能を使わない端末には出ない');
-  assert.ok(!/未達|サボ|足りない/.test(text + detail + issueText + planText));
-  const order = findAll(ui.$('review-summary-body'), (e) => e.classSet.has('seg')).map((e) => e.textContent);
-  // 「計画」のボタンには、気づき（ヒント）の数を添える
-  assert.deepStrictEqual(order, ['時間', '学習内容', '課題', `計画${count('hint-card')}`]);
-  assert.strictEqual(findAll(planChip(), (e) => e.classSet.has('seg-badge'))[0].attrs['aria-label'], `ヒント${count('hint-card')}件`);
-  await chipByText(ui.$('review-summary-body'), '時間').click();
-  assert.strictEqual(count('band-grid'), 1);
   assert.ok(ui.$('review-week-label').textContent.startsWith('今週'));
   assert.ok(ui.$('btn-review-next').disabled);
   await ui.$('btn-review-prev').click();
   assert.ok(!ui.$('review-week-label').textContent.startsWith('今週'));
   assert.ok(!ui.$('btn-review-next').disabled);
+  assert.strictEqual(count('band-grid'), 1);
 });
 
 test('振り返り：見るだけの端末でも開け、ノートの「わかった」は出ない', async () => {
@@ -793,147 +784,20 @@ test('振り返り：見るだけの端末でも開け、ノートの「わか�
   assert.strictEqual(findAll(mother.$('review-list'), (e) => e.tagName === 'button').length, 0);
 });
 
-const changeChips = (ui) => findAll(ui.$('change-list'), (e) => e.classSet.has('change-chip'));
-const reviewChange = (ui) => findAll(ui.$('review-summary-body'), (e) => e.classSet.has('review-change'))[0];
-const mondayOf = (ui, weeksAgo) => ui.ctx.run(`shiftDate(startOfWeekStr(), -${7 * (weeksAgo || 0)})`);
-const reviewFile = (server, week) => {
-  const f = server.files.get(`reviews/review-${week.replace(/-/g, '')}.json`);
-  return f ? JSON.parse(f.text) : null;
-};
-
-test('今週がんばること：TOP を押すとダイアログが開き、候補を押すと決まって送られる。自分で書く（30字まで）・取り消す・閉じるができる', async () => {
+test('今週がんばること：TOP にも振り返りにも出さない。前に決めたデータは端末に残り、同期でも書き換えない', async () => {
   const server = newServer();
   const ui = makeUi(server);
   await enterToken(ui, { token: TOKEN_W, mode: 'write' });
-  const week = mondayOf(ui);
-  const top = ui.$('top-change');
-  const dialog = ui.$('change-dialog');
-  assert.ok(!top.hidden && !top.disabled && dialog.hidden);
-  assert.strictEqual(top.textContent, '今週がんばることタップして決める');
-
-  await top.click();
-  assert.ok(!dialog.hidden);
-  assert.deepStrictEqual(changeChips(ui).map((c) => c.textContent), ['単語1日5語', '寝る前10分暗記', '毎日、ワークを少しでも進める', '遅れている教材から先にやる', '毎日計画の時間通り勉強する']);
-  assert.ok(ui.$('btn-change-clear').hidden, '決めていないときは「取り消す」を出さない');
-  assert.strictEqual(ui.$('change-input').maxLength, 30);
-
-  // 閉じる・外側を押すと、決めずに閉じる
-  await ui.$('btn-change-close').click();
-  assert.ok(dialog.hidden);
-  await top.click();
-  await dialog.click();
-  assert.ok(dialog.hidden);
-  assert.strictEqual(reviewFile(server, week), null);
-
-  // 候補を押すと決まり、閉じて、TOP に出て、送られる
-  await top.click();
-  await changeChips(ui)[2].click();
+  ui.ctx.saveWeekChange(ui.ctx.run('startOfWeekStr()'), { id: 'c-word-5', label: '単語1日5語' });
+  ui.ctx.kickSync();
   await ui.settle();
-  assert.ok(dialog.hidden);
-  assert.strictEqual(top.textContent, '今週がんばること毎日、ワークを少しでも進める');
-  const saved = reviewFile(server, week);
-  assert.deepStrictEqual(saved.change, { id: 'c-daily', label: '毎日、ワークを少しでも進める' });
-  assert.ok(saved.weekStart === week && saved.deleted === false);
-
-  // 開き直すと、決めた候補に印がつく。自分で書く：空欄では決まらず、30字まで
-  await top.click();
-  assert.deepStrictEqual(changeChips(ui).filter((c) => c.classSet.has('selected')).map((c) => c.textContent), ['毎日、ワークを少しでも進める']);
-  assert.ok(!ui.$('btn-change-clear').hidden);
-  ui.$('change-input').value = '   ';
-  await ui.$('btn-change-free').click();
-  assert.ok(!dialog.hidden, '空欄では決まらない');
-  ui.$('change-input').value = 'あ'.repeat(40);
-  await ui.$('btn-change-free').click();
-  await ui.settle();
-  const free = reviewFile(server, week);
-  assert.deepStrictEqual(free.change, { id: 'c-free', label: '自分で書く', text: 'あ'.repeat(30) });
-  assert.strictEqual(free.createdAt, saved.createdAt);
-  assert.strictEqual(top.textContent, '今週がんばること' + 'あ'.repeat(30));
-  await top.click();
-  assert.strictEqual(ui.$('change-input').value, 'あ'.repeat(30), '書いた文を直せる');
-  assert.strictEqual(changeChips(ui).filter((c) => c.classSet.has('selected')).length, 0);
-
-  // 取り消す
-  await ui.$('btn-change-clear').click();
-  await ui.settle();
-  assert.ok(dialog.hidden);
-  assert.strictEqual(reviewFile(server, week).change, null);
-  assert.strictEqual(top.textContent, '今週がんばることタップして決める');
-
-  // 画面を移るとダイアログは閉じる
-  await top.click();
-  await ui.$('menu-review').click();
-  assert.ok(dialog.hidden);
-});
-
-test('今週がんばること：前の週に決めたものが今週も続く。振り返りの1行からも変えられ、過去の週は表示だけ', async () => {
-  const server = newServer();
-  const ui = makeUi(server);
-  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
-  ui.ctx.seedSampleData();
-  ui.ctx.saveWeekChange(mondayOf(ui, 2), { id: 'c-word-5', label: '単語1日5語' });
+  const files = [...server.files.keys()].filter((k) => k.startsWith('reviews/'));
+  assert.strictEqual(files.length, 1, '前の版と同じく送られる（データの形は変えない）');
   ui.ctx.goTo('screen-top');
-  assert.strictEqual(ui.$('top-change').textContent, '今週がんばること単語1日5語');
-
+  assert.ok(!/がんばること/.test(ui.$('screen-top').textContent));
   await ui.$('menu-review').click();
   await ui.settle();
-  const body = ui.$('review-summary-body');
-  assert.strictEqual(body.children[0], reviewChange(ui), '「できたこと」の上に置く');
-  assert.ok(body.children[1].classSet.has('review-done'));
-  assert.strictEqual(reviewChange(ui).textContent, '今週がんばること単語1日5語');
-  assert.strictEqual(reviewChange(ui).tagName, 'button');
-
-  // 振り返りの1行を押すと、同じダイアログで変えられる（今週のファイルに書く。前に決めた週のファイルは変えない）
-  const before = server.files.get(`reviews/review-${mondayOf(ui, 2).replace(/-/g, '')}.json`).text;
-  await reviewChange(ui).click();
-  assert.ok(!ui.$('change-dialog').hidden);
-  await changeChips(ui)[1].click();
-  await ui.settle();
-  assert.ok(ui.$('change-dialog').hidden);
-  assert.deepStrictEqual(ui.visibleScreens(), ['screen-review']);
-  assert.strictEqual(reviewChange(ui).textContent, '今週がんばること寝る前10分暗記');
-  assert.strictEqual(reviewFile(server, mondayOf(ui)).change.id, 'c-bedtime-memo');
-  assert.strictEqual(server.files.get(`reviews/review-${mondayOf(ui, 2).replace(/-/g, '')}.json`).text, before);
-
-  // 過去の週：その週にがんばることにしていた1つを、表示だけ
-  await ui.$('btn-review-prev').click();
-  assert.strictEqual(reviewChange(ui).textContent, 'この週にがんばること単語1日5語');
-  assert.strictEqual(reviewChange(ui).tagName, 'div');
-  ui.ctx.run('reviewWeek = shiftDate(startOfWeekStr(), -21); renderReview()');
-  assert.strictEqual(reviewChange(ui), undefined, '決める前の週には出さない');
-  ui.ctx.goTo('screen-top');
-  assert.strictEqual(ui.$('top-change').textContent, '今週がんばること寝る前10分暗記');
-  assert.ok(!/未達|サボ|足りない/.test(body.textContent));
-});
-
-test('今週がんばること：見るだけの端末では押せず、別の端末で決めたものは TOP と振り返りで見える。決めていなければ出さない', async () => {
-  const server = newServer();
-  const mother = makeUi(server);
-  await enterToken(mother, { token: TOKEN_R, mode: 'read' });
-  assert.ok(mother.$('top-change').hidden);
-  await mother.$('menu-review').click();
-  await mother.settle();
-  assert.strictEqual(reviewChange(mother), undefined);
-
-  const owner = makeUi(server);
-  await enterToken(owner, { token: TOKEN_W, mode: 'write' });
-  await owner.$('top-change').click();
-  await changeChips(owner)[0].click();
-  await owner.settle();
-
-  mother.ctx.kickSync();
-  await mother.settle();
-  mother.ctx.goTo('screen-top');
-  const top = mother.$('top-change');
-  assert.ok(!top.hidden && top.disabled);
-  assert.strictEqual(top.textContent, '今週がんばること単語1日5語');
-  await top.click();
-  mother.ctx.openChangeDialog();
-  assert.ok(mother.$('change-dialog').hidden);
-  await mother.$('menu-review').click();
-  assert.strictEqual(reviewChange(mother).textContent, '今週がんばること単語1日5語');
-  assert.strictEqual(reviewChange(mother).tagName, 'div');
-  assert.strictEqual(server.requests('PUT').length, 1);
+  assert.ok(!/がんばること/.test(ui.$('screen-review').textContent));
 });
 
 function oldRecord(ui, daysAgo, tail, extra) {
@@ -966,7 +830,7 @@ test('振り返り：開くと同期し、取り込み範囲より前の週に�
   ui.ctx.run(`reviewWeek = startOfWeekStr(parseDate('${old.date}')); renderReview()`);
   await ui.settle();
   assert.ok(ui.ctx.findRecord(old.id), '表示する週の月を取る');
-  assert.ok(/できたこと1日・50分/.test(body.textContent), body.textContent);
+  assert.ok(/勉強した時間1日・50分/.test(body.textContent), body.textContent);
   assert.ok(!body.textContent.includes(NOTE));
 
   ui.state.offline = true;
@@ -1017,20 +881,7 @@ test('学習計画の結果：計画の開始日が取り込み範囲より前�
   assert.ok(ui.$('plan-result-body').textContent.includes('この端末にある記録で表示しています'));
 });
 
-test('テスト用（localhost）：今週がんばることは端末内だけに保存され、通信しない', async () => {
-  const server = newServer();
-  const ui = makeUi(server, { hostname: 'localhost', search: '?dev=1' });
-  await ui.$('top-change').click();
-  await changeChips(ui)[0].click();
-  await ui.settle();
-  assert.strictEqual(ui.$('top-change').textContent, '今週がんばること単語1日5語');
-  assert.strictEqual(ui.ctx.loadReviews().length, 1);
-  await ui.$('menu-review').click();
-  await ui.settle();
-  assert.strictEqual(server.log.length, 0);
-});
-
-test('振り返り：くわしく見る。期間（日／週／月／テストまで）と観点（教科／学習内容／量）を切り替える。「テストまで」は計画があるときだけ。赤の警告や「未達」は出ない', async () => {
+test('振り返り：タブは「今週／月／テストまで／ノート」。月・テストまでも観点（教科／学習内容／量／課題）を切り替える。「テストまで」は計画があるときだけ。赤の警告や「未達」は出ない', async () => {
   const ui = makeUi(newServer());
   await enterToken(ui, { token: TOKEN_W, mode: 'write' });
   const body = ui.$('review-detail-body');
@@ -1040,75 +891,77 @@ test('振り返り：くわしく見る。期間（日／週／月／テスト�
 
   // 記録も計画もないとき
   await ui.$('menu-review').click();
-  assert.deepStrictEqual(chips(ui.$('review-tabs')), ['今週のまとめ', 'くわしく見る', 'ノート']);
-  await chipByText(ui.$('review-tabs'), 'くわしく見る').click();
+  assert.deepStrictEqual(chips(ui.$('review-tabs')), ['今週', '月', 'ノート'], '計画がなければ「テストまで」は出さない');
+  await chipByText(ui.$('review-tabs'), '月').click();
   assert.ok(ui.$('review-panel-summary').hidden && !ui.$('review-panel-detail').hidden && ui.$('review-panel-note').hidden);
-  assert.deepStrictEqual(chips(ui.$('detail-period')), ['日', '週', '月'], '計画がなければ「テストまで」は出さない');
+  assert.strictEqual(ui.$('detail-period'), undefined, '期間の切り替えは出さない');
+  assert.ok(label().startsWith('今月 '), label());
   assert.ok(/この期間の記録はまだありません/.test(body.textContent));
   assert.ok(ui.$('btn-detail-prev').disabled && ui.$('btn-detail-next').disabled);
   await chipByText(body, '量').click();
   assert.ok(/この期間の量の記録はまだありません/.test(body.textContent) && !/計画：/.test(body.textContent), '計画の欄は出さない');
   await chipByText(body, '教科').click();
 
-  // サンプル（2週間分の記録と計画）。最初は 週 × 教科
+  // サンプル（2週間分の記録と計画）。月 × 教科
   ui.ctx.seedSampleData();
   await ui.$('menu-review').click();
-  await chipByText(ui.$('review-tabs'), 'くわしく見る').click();
-  assert.deepStrictEqual(chips(ui.$('detail-period')), ['日', '週', '月', 'テストまで']);
-  assert.ok(label().startsWith('今週 '), label());
-  assert.strictEqual(count('trend-col'), 7, '週は日ごとの棒');
+  assert.deepStrictEqual(chips(ui.$('review-tabs')), ['今週', '月', 'テストまで', 'ノート']);
+  await chipByText(ui.$('review-tabs'), '月').click();
+  assert.ok(label().startsWith('今月 '), label());
+  assert.ok(count('trend-col') >= 4 && count('trend-col') <= 6, '月は週ごとの棒');
   assert.strictEqual(count('trend-legend-item'), 5);
-  assert.deepStrictEqual(chips(body), ['教科', '学習内容', '量']);
+  assert.deepStrictEqual(chips(body), ['教科', '学習内容', '量', '課題']);
   assert.strictEqual(count('subj-row'), 5);
   const subjectText = body.textContent;
-  assert.ok(/^勉強した時間\d日・/.test(subjectText) && /やったことの内訳/.test(subjectText) && /回・正答率 〜\d+%くらい/.test(subjectText), subjectText);
+  assert.ok(/^勉強した時間\d+日・/.test(subjectText) && /やったことの内訳/.test(subjectText) && /回・正答率 〜\d+%くらい/.test(subjectText), subjectText);
 
   await chipByText(body, '学習内容').click();
   const fieldText = body.textContent;
-  assert.ok(count('field-row') >= 2 && count('subj-row') === 0 && /計算20分/.test(fieldText), fieldText);
+  assert.ok(count('field-row') >= 2 && count('subj-row') === 0 && /計算/.test(fieldText), fieldText);
 
   await chipByText(body, '量').click();
   const amountText = body.textContent;
   assert.ok(/計画：サンプルのテスト　テストまで あと28日/.test(amountText), amountText);
   assert.ok(/ワーク\d+ \/ \d+ページ/.test(amountText) && /(あと\d+ページ|✓ 届いた)/.test(amountText), '計画にある教材は予定と並べる');
   assert.ok(/宿題\d+ページ/.test(amountText), '計画にない教材は、やった量だけ');
+  assert.ok(/月末までの予定/.test(amountText), amountText);
   assert.strictEqual(findAll(body, (e) => e.textContent === '学習計画を開く').length, 0, '管理機能を使わない端末には出ない');
 
-  // ‹ ›：前の週へ戻れ、今週より先には進めない
-  assert.ok(ui.$('btn-detail-next').disabled && !ui.$('btn-detail-prev').disabled);
-  await ui.$('btn-detail-prev').click();
-  assert.ok(!label().startsWith('今週') && !ui.$('btn-detail-next').disabled);
-  await ui.$('btn-detail-next').click();
-  assert.ok(label().startsWith('今週 '));
-
-  // 月：週ごとの棒
-  await chipByText(ui.$('detail-period'), '月').click();
-  assert.ok(label().startsWith('今月 '), label());
-  assert.ok(count('trend-col') >= 4 && count('trend-col') <= 6);
-  const monthText = body.textContent;
+  // ‹ ›：いちばん古い記録の月まで戻れ、今月より先には進めない（サンプルは2週間分なので、今日によっては前の月がない）
+  assert.ok(ui.$('btn-detail-next').disabled);
+  const hasPrevMonth = ui.ctx.run("firstReviewDate() < todayStr().slice(0, 7) + '-01'");
+  assert.strictEqual(!ui.$('btn-detail-prev').disabled, hasPrevMonth);
+  if (hasPrevMonth) {
+    await ui.$('btn-detail-prev').click();
+    assert.ok(!label().startsWith('今月') && !ui.$('btn-detail-next').disabled);
+    await ui.$('btn-detail-next').click();
+    assert.ok(label().startsWith('今月 '));
+  }
 
   // テストまで：計画の開始日〜テスト日。量は周ごと
-  await chipByText(ui.$('detail-period'), 'テストまで').click();
+  await chipByText(ui.$('review-tabs'), 'テストまで').click();
+  assert.ok(!ui.$('review-panel-detail').hidden);
   assert.ok(label().startsWith('サンプルのテスト '), label());
   assert.ok(ui.$('btn-detail-prev').disabled && ui.$('btn-detail-next').disabled, '計画が1つなら移れない');
-  assert.strictEqual(count('lap-track'), 3);
+  assert.strictEqual(count('lap-track'), 4);
   const testText = body.textContent;
   assert.ok(/1周目 \d+\/\d+/.test(testText) && /計画の開始日からやった量/.test(testText), testText);
 
-  // 日：グラフは出さず、記録カード。観点の切り替えも出さない
-  await chipByText(ui.$('detail-period'), '日').click();
-  assert.ok(label().startsWith('今日 '), label());
-  assert.strictEqual(count('trend') + count('seg'), 0);
-  assert.strictEqual(count('day-card'), 2);
-  const dayText = body.textContent;
-  assert.ok(/^2回・1時間15分/.test(dayText) && /課題：そもそも分からない・前のを忘れた/.test(dayText), dayText);
-  await ui.$('btn-detail-prev').click();
-  assert.ok(!label().startsWith('今日') && !ui.$('btn-detail-next').disabled);
+  // 月に戻ると、また月の表示
+  await chipByText(ui.$('review-tabs'), '月').click();
+  assert.ok(label().startsWith('今月 '), label());
 
-  assert.ok(!/未達|サボ|足りない/.test(subjectText + fieldText + amountText + monthText + testText + dayText));
+  // 計画を消すと、「テストまで」のタブは出ず、今週に戻る
+  await chipByText(ui.$('review-tabs'), 'テストまで').click();
+  ui.ctx.clearSampleData();
+  ui.ctx.renderReview();
+  assert.deepStrictEqual(chips(ui.$('review-tabs')), ['今週', '月', 'ノート']);
+  assert.ok(!ui.$('review-panel-summary').hidden);
+
+  assert.ok(!/未達|サボ|足りない/.test(subjectText + fieldText + amountText + testText));
 });
 
-test('振り返り：くわしく見るでも、取り込み範囲より前の期間に移ると、その月の記録を保存先から取る', async () => {
+test('振り返り：月でも、取り込み範囲より前の月に移ると、その月の記録を保存先から取る', async () => {
   const server = newServer();
   const ui = makeUi(server);
   await enterToken(ui, { token: TOKEN_W, mode: 'write' });
@@ -1116,8 +969,7 @@ test('振り返り：くわしく見るでも、取り込み範囲より前の�
   putRecord(server, old);
   await ui.$('menu-review').click();
   await ui.settle();
-  await chipByText(ui.$('review-tabs'), 'くわしく見る').click();
-  await chipByText(ui.$('detail-period'), '月').click();
+  await chipByText(ui.$('review-tabs'), '月').click();
   await ui.settle();
   assert.ok(!ui.ctx.findRecord(old.id));
   assert.ok(!ui.$('btn-detail-prev').disabled, '保存先にある月までさかのぼれる');
@@ -1128,41 +980,206 @@ test('振り返り：くわしく見るでも、取り込み範囲より前の�
   assert.strictEqual(server.requests('PUT').length, 0);
 });
 
-test('TOP：今週の合計時間・記録した日・教科ごとの時間。計画があれば、下に進捗率を2つ（今週の目標・テストまで）だけ出す', async () => {
-  const ui = makeUi(newServer());
-  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
-  const count = (root, cls) => findAll(root, (e) => e.classSet.has(cls)).length;
+// 計画を端末で作る（開始日は today から startOffset 日、テストは 21 日後）
+function makePlan(ui, items, startOffset) {
+  return ui.ctx.run(`(() => {
+    const today = formatDate(new Date());
+    const p = newPlan(shiftDate(today, ${startOffset || 0}));
+    p.name = '期末';
+    p.testDate = shiftDate(today, 21);
+    p.months = defaultPlanMonths(p.startDate, p.testDate);
+    p.items = ${JSON.stringify(items)};
+    savePlan(p);
+    return p;
+  })()`);
+}
+const MATH_WORK = (amount, laps) => ({ materialId: 'm-ma-work', subject: '数学', label: 'ワーク', unit: 'ページ', amount, laps, lapMarks: [] });
+function workRecord(ui, tail, pages, subject, materialId) {
+  const date = ui.ctx.run('formatDate(new Date())');
+  const r = sampleRecord({ id: date.replace(/-/g, '') + '-1900' + tail, date, subject: subject || '数学' });
+  r.materials = [{ id: materialId || 'm-ma-work', label: 'ワーク', amount: { value: pages, unit: 'ページ' } }];
+  ui.ctx.saveRecord(r);
+  return r;
+}
+const lapRows = (ui) => findAll(ui.$('top-plan'), (e) => e.classSet.has('lap-row'));
 
-  // 計画がないとき：時間だけ
-  assert.strictEqual(ui.$('week-total').textContent, '0分');
-  assert.strictEqual(ui.$('week-days').textContent, '0日');
-  assert.strictEqual(count(ui.$('week-subjects'), 'bar-row'), 5);
-  assert.ok(ui.$('week-plan').hidden);
-
-  // サンプル（今日の記録：理科25分・数学50分。計画：理科ワーク・英語の単語・数学ワーク）
-  ui.ctx.seedSampleData();
-  ui.ctx.renderTop();
-  assert.ok(/^\d+時間/.test(ui.$('week-total').textContent) && /^\d日$/.test(ui.$('week-days').textContent));
-  assert.strictEqual(count(ui.$('week-subjects'), 'bar-row'), 5, '教科ごとの時間はそのまま');
-  const plan = ui.$('week-plan');
-  assert.ok(!plan.hidden);
-  assert.strictEqual(count(plan, 'rate-row'), 2);
-  assert.strictEqual(count(plan, 'rate-mark'), 1, '印は「テストまで」だけ');
-  assert.ok(/^計画の進みテストまで あと28日今週の目標\d+%テストまで\d+%印＝きのうまでの予定（\d+%）$/.test(plan.textContent), plan.textContent);
-  assert.ok(!/未達|遅れ|サボ|足りない/.test(plan.textContent));
-
-  // サンプルを消すと、計画の進みは出ない
-  ui.ctx.clearSampleData();
-  ui.ctx.renderTop();
-  assert.ok(ui.$('week-plan').hidden);
+test('TOP：計画や管理機能が保存されている端末で開き直しても、最初の画面が表示される', async () => {
+  const server = newServer();
+  const first = makeUi(server, { hostname: 'localhost', search: '?dev=1' });
+  first.ctx.saveFeature('admin', true);
+  first.ctx.seedSampleData();
+  const again = makeUi(server, { hostname: 'localhost', search: '?dev=1', store: first.store });
+  assert.deepStrictEqual(again.visibleScreens(), ['screen-top']);
+  assert.ok(/あと28日/.test(again.$('top-count').textContent), again.$('top-count').textContent);
+  assert.strictEqual(lapRows(again).length, 4);
+  // サンプルの周回の表：国語＝9割手前／理科＝1周目が終わって2周目／英語 単語＝もうすぐ／数学＝大きく遅れ
+  const rows = lapRows(again).map((e) => e.textContent);
+  assert.ok(/^国語1周目 8\d%$/.test(rows[0]), rows[0]);
+  assert.ok(/^理科2周目 \d+%$/.test(rows[1]), rows[1]);
+  assert.ok(/^英語 単語1周目 もうすぐ/.test(rows[2]), rows[2]);
+  assert.ok(lapRows(again)[3].classSet.has('is-late'), rows[3]);
+  assert.strictEqual(again.$('week-praise').textContent.startsWith('理科 ワーク、1周目が終わった') || !again.ctx.run("shiftDate(formatDate(new Date()), -1) >= startOfWeekStr()"), true);
+  // サンプルで国語のワークを記録すると、登録結果で「終わった？」と聞かれる
+  const r = workRecord(again, '09', 3, '国語', 'm-jp-work');
+  again.ctx.renderDone(r, false);
+  assert.ok(!again.$('done-lap').hidden && /^国語　今は 1周目。終わった？記録からの目安 9\d%/.test(again.$('done-lap').textContent), again.$('done-lap').textContent);
+  first.ctx.clearSampleData();
+  const noplan = makeUi(server, { hostname: 'localhost', search: '?dev=1', store: first.store });
+  assert.ok(/学習計画を作る/.test(noplan.$('top-noplan').textContent));
 });
 
-test('TOP：見るだけの端末でも、計画の進みを見られる', async () => {
+test('TOP：計画がないときは「計画がまだありません」と今週のワーク・今週のカードだけ。管理機能の端末には「学習計画を作る」', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  workRecord(ui, '01', 6);
+  ui.ctx.renderTop();
+  assert.ok(!ui.$('top-noplan').hidden && ui.$('top-count').hidden);
+  assert.strictEqual(ui.$('top-noplan').textContent, '次のテストの計画はまだありません');
+  assert.strictEqual(findAll(ui.$('top-noplan'), (e) => e.tagName === 'button').length, 0, '管理機能のない端末にはボタンを出さない');
+  assert.ok(/^今週のワーク 6ページ（前の週 0）/.test(ui.$('top-plan').textContent), ui.$('top-plan').textContent);
+  assert.strictEqual(findAll(ui.$('top-plan'), (e) => e.classSet.has('work-row')).length, 5);
+  assert.strictEqual(ui.$('week-total').textContent, '50分');
+  assert.strictEqual(ui.$('week-days').textContent, '1日');
+  assert.ok(!/がんばること|!/.test(ui.$('screen-top').textContent));
+
+  ui.ctx.saveFeature('admin', true);
+  ui.ctx.renderTop();
+  assert.ok(/計画がまだありません/.test(ui.$('top-noplan').textContent));
+  await buttonByText(ui.$('top-noplan'), '学習計画を作る').click();
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-edit']);
+});
+
+test('TOP：範囲がまだない計画は、テストまでの日数と今週のワーク。範囲なしでも計画を保存できる', async () => {
+  const ui = makeUi(newServer());
+  await ui.$('sync-admin').children[0].click();
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  await ui.$('menu-plan').click();
+  await ui.$('btn-plan-new').click();
+  const input = findAll(ui.$('plan-edit-body'), (e) => e.classSet.has('plan-input'))[0];
+  input.value = '期末';
+  input.listeners.change[0]();
+  await ui.$('btn-plan-save').click();
+  await ui.settle();
+  assert.ok(ui.$('plan-edit-error').hidden, ui.$('plan-edit-error').textContent);
+  assert.deepStrictEqual(ui.visibleScreens(), ['screen-plan-result']);
+  assert.ok(/範囲がまだ入っていません/.test(ui.$('plan-result-body').textContent));
+  ui.ctx.goTo('screen-top');
+  assert.ok(ui.$('top-noplan').hidden && !ui.$('top-count').hidden);
+  assert.strictEqual(ui.$('top-count').textContent, `期末（${ui.ctx.run('shortDate(shiftDate(formatDate(new Date()), 28))')}）まであと28日範囲が発表されたら、周回で見られます`);
+  assert.ok(/^今週のワーク/.test(ui.$('top-plan').textContent));
+});
+
+test('TOP：範囲があれば周回の表。「終わった」を付けるまでは「もうすぐ」で止まり、行から付けると次の周へ。取り消せる。付けた週は、できたことの1行に出る', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const plan = makePlan(ui, [MATH_WORK(20, 2)]);
+  ui.ctx.renderTop();
+  assert.ok(/あと21日/.test(ui.$('top-count').textContent));
+  assert.ok(/^1周目の目安 \d+\/\d+ まで（あと14日）/.test(ui.$('top-plan').textContent), ui.$('top-plan').textContent);
+  assert.strictEqual(lapRows(ui).length, 1);
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学1周目 0%');
+
+  workRecord(ui, '01', 10);
+  ui.ctx.renderTop();
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学1周目 50%');
+  workRecord(ui, '02', 12);
+  ui.ctx.renderTop();
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学1周目 もうすぐ終わったら押す');
+  const fill = findAll(lapRows(ui)[0], (e) => e.tagName === 'i')[0];
+  assert.strictEqual(fill.style.width, '99%', '付けるまでは99%で止める');
+
+  await lapRows(ui)[0].click();
+  assert.ok(!ui.$('lap-dialog').hidden);
+  assert.strictEqual(ui.$('lap-dialog-title').textContent, '数学 1周目、終わった？');
+  const next = findAll(ui.$('lap-dialog-body'), (e) => e.tagName === 'input')[0];
+  next.value = '4';
+  await buttonByText(ui.$('lap-dialog-body'), '終わった').click();
+  await ui.settle();
+  assert.ok(ui.$('lap-dialog').hidden);
+  const saved = JSON.parse(server.files.get(`plans/${plan.id}.json`).text);
+  assert.deepStrictEqual(saved.items[0].lapMarks.map((m) => [m.lap, m.nextAmount]), [[1, 4]], '計画のファイルに送られる');
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学2周目 0%');
+  assert.strictEqual(findAll(lapRows(ui)[0], (e) => e.classSet.has('is-done')).length, 1);
+  assert.strictEqual(ui.$('week-praise').textContent, '数学 ワーク、1周目が終わった');
+
+  await lapRows(ui)[0].click();
+  await buttonByText(ui.$('lap-dialog-body'), '1周目の「終わった」を取り消す').click();
+  await ui.settle();
+  assert.strictEqual(JSON.parse(server.files.get(`plans/${plan.id}.json`).text).items[0].lapMarks.length, 0);
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学1周目 もうすぐ終わったら押す');
+});
+
+test('TOP：大きく遅れている教材の行だけ色を変え、「予定まで あと○」を添える。「!」は出さない', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  makePlan(ui, [MATH_WORK(40, 2), { materialId: 'm-sc-work', subject: '理科', label: 'ワーク', unit: 'ページ', amount: 40, laps: 2, lapMarks: [] }], -10);
+  // 遅れは昨日までの記録で見る
+  const y = ui.ctx.run('shiftDate(formatDate(new Date()), -1)');
+  const r = sampleRecord({ id: y.replace(/-/g, '') + '-190001', date: y, subject: '理科' });
+  r.materials = [{ id: 'm-sc-work', label: 'ワーク', amount: { value: 40, unit: 'ページ' } }];
+  ui.ctx.saveRecord(r);
+  ui.ctx.renderTop();
+  const rows = lapRows(ui);
+  assert.ok(rows[0].classSet.has('is-late') && /予定まで あと\d+ページ/.test(rows[0].textContent), rows[0].textContent);
+  assert.ok(!rows[1].classSet.has('is-late'));
+  assert.ok(!/!|！/.test(ui.$('top-plan').textContent));
+});
+
+test('TOP：見るだけの端末でも、テストまでの日数と周回の表を見られる（押せない）', async () => {
   const mother = makeUi(newServer());
   await enterToken(mother, { token: TOKEN_R, mode: 'read' });
   mother.ctx.seedSampleData();
   mother.ctx.renderTop();
-  assert.ok(!mother.$('week-plan').hidden && /今週の目標\d+%/.test(mother.$('week-plan').textContent));
+  assert.ok(/あと28日/.test(mother.$('top-count').textContent));
+  assert.strictEqual(lapRows(mother).length, 4);
+  assert.ok(lapRows(mother).every((e) => e.tagName === 'div'));
+  assert.ok(!/行を押す/.test(mother.$('top-plan').textContent));
+});
+
+test('TOP：今週のカードは、時間と日数を1行、できたこと1行、教科の棒。あいている教科は「○日あき」', async () => {
+  const ui = makeUi(newServer());
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  assert.ok(ui.$('week-praise').hidden, '記録がなければ、できたことは出さない');
+  ['01', '02', '03'].forEach((t) => workRecord(ui, t, 2, '英語', 'm-en-work'));
+  ui.ctx.renderTop();
+  assert.ok(!ui.$('week-praise').hidden && ui.$('week-praise').textContent.length > 0);
+  const bars = findAll(ui.$('week-subjects'), (e) => e.classSet.has('bar-row'));
+  assert.strictEqual(bars.length, 5);
+  assert.ok(/英語2時間30分$/.test(bars[2].textContent), bars[2].textContent);
+  assert.ok(/数学0分しばらくあき$/.test(bars[1].textContent), bars[1].textContent);
+});
+
+test('登録結果：計画にある教材を記録したら、ページ数に関係なく毎回「今は○周目。終わった？」と聞く。2周目以降は、×の数がなければ割合を出さない', async () => {
+  const server = newServer();
+  const ui = makeUi(server);
+  await enterToken(ui, { token: TOKEN_W, mode: 'write' });
+  const plan = makePlan(ui, [MATH_WORK(20, 2)]);
+  const show = (r) => {
+    ui.ctx.renderDone(r, false);
+    return ui.$('done-lap');
+  };
+  const box = show(workRecord(ui, '01', 2));
+  assert.ok(!box.hidden, '1割でも聞く');
+  assert.strictEqual(box.textContent, '数学　今は 1周目。終わった？記録からの目安 10%まだ終わった');
+  await buttonByText(box, 'まだ').click();
+  assert.ok(box.hidden);
+  const again = show(workRecord(ui, '02', 1));
+  assert.ok(!again.hidden, '次の記録でもまた聞く');
+  await buttonByText(again, '終わった').click();
+  await ui.settle();
+  assert.ok(/1周目、おつかれさま/.test(again.textContent));
+  assert.deepStrictEqual(JSON.parse(server.files.get(`plans/${plan.id}.json`).text).items[0].lapMarks.map((m) => [m.lap, m.nextAmount]), [[1, null]]);
+
+  // ×の数を入れずに終えた2周目は、割合を出さない（TOP も登録結果も）
+  const lap2 = show(workRecord(ui, '03', 3));
+  assert.strictEqual(lap2.textContent, '数学　今は 2周目。終わった？まだ終わった');
+  ui.ctx.goTo('screen-top');
+  assert.strictEqual(lapRows(ui)[0].textContent, '数学2周目');
+  assert.strictEqual(findAll(lapRows(ui)[0], (e) => e.tagName === 'i').length, 0);
+
+  const other = workRecord(ui, '05', 3, '英語', 'm-en-work');
+  assert.ok(show(other).hidden, '計画にない教材では聞かない');
 });
 
 (async () => {

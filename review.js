@@ -1,4 +1,4 @@
-// 振り返りの集計：週のまとめ・できたこと・計画の進み・気づき・がんばること。画面から独立した計算だけを置く。
+// 振り返りの集計：週のまとめ・できたこと・計画の進み・ヒント・がんばること。画面から独立した計算だけを置く。
 // 比べるのは先週の自分と計画だけ。
 
 const RR = REVIEW_RULES;
@@ -18,11 +18,6 @@ function minutesBySubject(list) {
     if (out[r.subject] !== undefined) out[r.subject] += r.totalMinutes || 0;
   });
   return out;
-}
-
-function issueGroupOf(id) {
-  const found = getMaster('issue').find((i) => i.id === id) || DEFAULT_MASTERS.issue.find((i) => i.id === id);
-  return found ? found.group : null;
 }
 
 function bandIdOf(r) {
@@ -112,6 +107,11 @@ function summarizeWeek(records, weekStart, today) {
 function praiseLines(summary, progress) {
   const lines = [];
   if (progress) {
+    ((progress.plan && progress.plan.items) || []).forEach((it) =>
+      (it.lapMarks || [])
+        .filter((m) => m.date >= summary.weekStart && m.date <= summary.weekEnd)
+        .forEach((m) => lines.push(`${it.subject} ${it.label}、${m.lap}周目が終わった`))
+    );
     progress.targets
       .filter((t) => t.goal > 0 && t.done >= t.goal)
       .forEach((t) => lines.push(`${t.subject} ${t.label}、今週の目標${t.goal}${t.unit}に届いた`));
@@ -204,139 +204,54 @@ function progressRates(progress) {
   };
 }
 
-// --- 気づき（最大 maxInsights。優先の小さい順） ---
-function lagInsight(b, current) {
-  const name = `${b.subject} ${b.label}`;
-  let text = `${name}：予定まであと${b.deficit}${b.unit}`;
-  if (current && b.perDay > 0) text += `。1日${b.perDay}${b.unit}で今月中に追いつけます`;
-  return { kind: 'lag', priority: b.ratio < RR.bigLagRatio ? 1 : 4, subject: b.subject, text };
+// --- 教科の空き：最後の記録から gapDays 日以上たった教科と日数（記録がない教科は Infinity）。直近 windowDays 日の記録が minRecords 未満なら見ない ---
+function subjectGaps(records, today) {
+  const live = records.filter((r) => !r.deleted && r.date <= today);
+  const out = {};
+  if (recordsBetween(live, shiftDate(today, -(RR.windowDays - 1)), today).length < RR.minRecords) return out;
+  SUBJECTS.forEach((s) => {
+    const last = live.filter((r) => r.subject === s).reduce((a, r) => (r.date > a ? r.date : a), '');
+    const days = last ? daysUntil(last, today) : Infinity;
+    if (days >= RR.gapDays) out[s] = days;
+  });
+  return out;
 }
 
-// 教科のつまずき（①正答率が低い ②空回り ③同じ課題がくり返す）。教科ごとに最も強いもの1つ
-function stumbleInsight(subject, list) {
-  const mine = list.filter((r) => r.subject === subject);
-  const acc = mine.filter((r) => r.accuracy && typeof r.accuracy.level === 'number');
-  const low = acc.filter((r) => r.accuracy.level <= RR.lowLevel).length;
-  if (acc.length >= RR.minRecords && low * 2 >= acc.length) {
-    return {
-      kind: 'accuracy',
-      subject,
-      text: `${subject}：正答率50%以下の回が${low}回（${acc.length}回中）。×を次の日に解き直すと定着しやすい`,
-    };
-  }
-
-  const fields = {};
-  mine.forEach((r) =>
-    (r.fields || []).forEach((f) => {
-      const x = (fields[f.id] = fields[f.id] || { label: f.label, minutes: 0, levels: [] });
-      x.minutes += f.minutes || 0;
-      if (r.accuracy && typeof r.accuracy.level === 'number') x.levels.push(r.accuracy.level);
-    })
-  );
-  const spin = Object.values(fields)
-    .filter((f) => f.minutes >= RR.spinMinutes && f.levels.length >= RR.spinRecords && f.levels.reduce((a, b) => a + b, 0) / f.levels.length <= RR.lowLevel)
-    .sort((a, b) => b.minutes - a.minutes)[0];
-  if (spin) {
-    return {
-      kind: 'spin',
-      subject,
-      text: `${subject} ${spin.label}に${formatMinutes(spin.minutes)}。正答率が上がらないときは、やり方を変えるサイン`,
-    };
-  }
-
-  const counts = {};
-  mine.forEach((r) =>
-    (r.issues || []).forEach((i) => {
-      const group = issueGroupOf(i.id);
-      if (i.id === 'i-free' || !group || group === ISSUE_GROUPS[2]) return; // 体調・気持ち・時間は教科をまたいで見る
-      const x = (counts[i.id] = counts[i.id] || { label: i.label, group, n: 0 });
-      x.n++;
-    })
-  );
-  const rep = Object.values(counts)
-    .filter((x) => x.n >= RR.repeatIssue)
-    .sort((a, b) => b.n - a.n)[0];
-  if (!rep) return null;
-  if (rep.group === UNCLEAR_GROUP) {
-    return {
-      kind: 'unclear',
-      subject,
-      link: 'note',
-      text: `${subject}：「${rep.label}」が${rep.n}回。ノートを見ながら、親か先生に聞いてみよう`,
-    };
-  }
-  return {
-    kind: 'review',
-    subject,
-    text: `${subject}：「${rep.label}」が${rep.n}回。前の内容を思い出してから始めると効きます`,
-  };
-}
-
-// 体調・気持ち・時間の課題（教科をまたいで数える）
-function conditionInsight(list) {
-  const counts = {};
-  list.forEach((r) =>
-    (r.issues || []).forEach((i) => {
-      if (issueGroupOf(i.id) !== ISSUE_GROUPS[2]) return;
-      const x = (counts[i.id] = counts[i.id] || { label: i.label, n: 0 });
-      x.n++;
-    })
-  );
-  const rep = Object.values(counts)
-    .filter((x) => x.n >= RR.repeatIssue)
-    .sort((a, b) => b.n - a.n)[0];
-  if (!rep) return null;
-  return {
-    kind: 'condition',
-    priority: 2,
-    subject: null,
-    text: `「${rep.label}」が${rep.n}回。時間帯や場所を変えてみる？`,
-  };
-}
-
-function detectInsights(records, weekStart, today, progress) {
+// --- ヒント（勉強時間・内容の偏り。最大 maxHints。優先の順） ---
+// 1 教科の空き（最後の記録から gapDays 日以上）／2 教科の偏り（今週の時間の半分以上が1教科）／3 復習が少ない（今週、復習も解き直しもない）／4 時間の減少（週が終わってから）
+function weekHints(records, weekStart, today) {
   const weekEnd = shiftDate(weekStart, 6);
-  const current = today >= weekStart && today <= weekEnd;
-  const windowEnd = today < weekEnd ? today : weekEnd;
-  const list = recordsBetween(records, shiftDate(windowEnd, -(RR.windowDays - 1)), windowEnd);
+  const live = records.filter((r) => !r.deleted && r.date <= today);
+  const week = recordsBetween(live, weekStart, weekEnd);
   const out = [];
-  if (progress) progress.behind.forEach((b) => out.push(lagInsight(b, current)));
-
-  if (list.length >= RR.minRecords) {
-    SUBJECTS.forEach((s) => {
-      const x = stumbleInsight(s, list);
-      if (x) out.push(Object.assign(x, { priority: 2 }));
-    });
-    const c = conditionInsight(list);
-    if (c) out.push(c);
-    if (list.length >= RR.gapRecords) {
-      SUBJECTS.filter((s) => !list.some((r) => r.subject === s)).forEach((s) =>
-        out.push({
-          kind: 'gap',
-          priority: 3,
-          subject: s,
-          text: `${s}：この${RR.windowDays === 14 ? '2週間' : RR.windowDays + '日'}、記録がありません`,
-        })
-      );
-    }
-    // 量の減少は、週が終わってから（日曜を含む）
-    const week = recordsBetween(records, weekStart, weekEnd);
-    const prev = recordsBetween(records, shiftDate(weekStart, -7), shiftDate(weekStart, -1));
-    const total = totalMinutesOf(week);
-    const prevTotal = totalMinutesOf(prev);
-    if (today >= weekEnd && prevTotal >= RR.dropMinMinutes && total < prevTotal * RR.dropRatio) {
-      out.push({
-        kind: 'drop',
-        priority: 5,
-        subject: null,
-        text: `今週は${formatMinutes(total)}（先週は${formatMinutes(prevTotal)}）。忙しかった週？`,
-      });
+  {
+    const map = subjectGaps(records, today);
+    const gaps = Object.keys(map)
+      .map((s) => ({ s, days: map[s] }))
+      .sort((a, b) => b.days - a.days || SUBJECTS.indexOf(a.s) - SUBJECTS.indexOf(b.s))
+      .slice(0, 2);
+    if (gaps.length) {
+      const part = gaps.map((x) => (x.days === Infinity ? `${x.s}がしばらく` : `${x.s}が${x.days}日`)).join('、');
+      out.push({ kind: 'gap', text: `${part}あいています。10分だけでも` });
     }
   }
-  return out
-    .map((x, i) => Object.assign(x, { order: i }))
-    .sort((a, b) => a.priority - b.priority || a.order - b.order)
-    .slice(0, RR.maxInsights);
+  const total = totalMinutesOf(week);
+  if (total >= RR.biasMinMinutes) {
+    const by = minutesBySubject(week);
+    const top = SUBJECTS.slice().sort((a, b) => by[b] - by[a])[0];
+    if (by[top] >= total * RR.biasRatio) out.push({ kind: 'bias', text: `今週は${top}が半分以上。ほかの教科も少し` });
+  }
+  if (week.length >= RR.minRecords) {
+    const reviewed = week.some(
+      (r) => (r.activity && RR.reviewActivities.includes(r.activity.id)) || (r.materials || []).some((m) => /-redo$/.test(m.id) && m.amount && m.amount.value > 0)
+    );
+    if (!reviewed) out.push({ kind: 'review', text: '今週は復習の記録がありません。×の解き直しを1つ' });
+  }
+  const prevTotal = totalMinutesOf(recordsBetween(live, shiftDate(weekStart, -7), shiftDate(weekStart, -1)));
+  if (today >= weekEnd && prevTotal >= RR.dropMinMinutes && total < prevTotal * RR.dropRatio) {
+    out.push({ kind: 'drop', text: `今週は${formatMinutes(total)}（先週は${formatMinutes(prevTotal)}）。忙しかった週？` });
+  }
+  return out.slice(0, RR.maxHints);
 }
 
 // その週にがんばること：その週までに決めたうち、いちばん新しいもの（変えるまで続く）。決めていない・取り消したときは null
@@ -345,7 +260,7 @@ function changeInEffect(reviews, weekStart) {
   return latest ? latest.change : null;
 }
 
-// --- くわしく見る：期間（日／週／月／テストまで）×観点（教科／学習内容／量） ---
+// --- 月・テストまで：期間×観点（教科／学習内容／量） ---
 // 期間の範囲。anchor はその期間に含まれる日。prev は比べる前の期間（週・月だけ）。「テストまで」は計画の開始日〜テスト日
 function detailRange(kind, anchor, plan) {
   if (kind === 'test' && plan) return { kind, from: plan.startDate, to: plan.testDate, prev: null };
@@ -423,7 +338,7 @@ function detailByField(list) {
 
 // 観点「量」：教科ごとに、教材ごとの量（単位が違うものは足さない）。
 // 計画にある教材は、その期間の予定（goal）とやった量を並べる。テストまでは周ごと（laps）。
-// 週の予定は、今週のまとめと同じ（日ごとの予定の合計）。月の予定は、月末までの予定から、その月の前までにやった量を引く
+// 週の予定は、日ごとの予定の合計。月の予定は、月末までの予定から、その月の前までにやった量を引く
 // （遅れを残りの日に分けた予定を足すと、遅れの分が重なるため）。
 // 計画にない教材は、やった量だけ。前の期間の量（prev）を添える
 function detailAmounts(records, range, plan, today) {

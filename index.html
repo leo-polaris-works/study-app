@@ -16,16 +16,18 @@
 
   <button class="sync-line" id="sync-line" type="button"></button>
 
-  <button class="top-change" id="top-change" type="button" hidden></button>
+  <div class="top-noplan" id="top-noplan" hidden></div>
+  <div class="top-count" id="top-count" hidden></div>
+  <div class="top-plan" id="top-plan"></div>
 
   <div class="week-card">
-    <h2>今週</h2>
-    <div class="week-numbers">
-      <div><span id="week-total">0分</span><small>合計</small></div>
-      <div><span id="week-days">0日</span><small>記録した日</small></div>
+    <div class="week-head">
+      <h2>今週</h2>
+      <span class="week-total" id="week-total">0分</span>
+      <span class="week-days" id="week-days">0日</span>
     </div>
+    <div class="week-praise" id="week-praise" hidden></div>
     <div id="week-subjects"></div>
-    <div class="top-plan" id="week-plan" hidden></div>
   </div>
 
   <div class="menu">
@@ -47,7 +49,7 @@
   </div>
 </section>
 
-<!-- 振り返り：今週のまとめ・くわしく見る・わからなかったことノート -->
+<!-- 振り返り：今週・月・テストまで・わからなかったことノート -->
 <section id="screen-review" class="screen" hidden>
   <button class="btn btn-back" data-goto="screen-top">← TOPへ</button>
   <h2>振り返り</h2>
@@ -61,7 +63,6 @@
     <div id="review-summary-body"></div>
   </div>
   <div id="review-panel-detail" hidden>
-    <div class="seg-group detail-period" id="detail-period"></div>
     <div class="week-nav">
       <button class="btn btn-small" id="btn-detail-prev" type="button">‹</button>
       <span class="week-nav-label" id="detail-range-label"></span>
@@ -133,6 +134,7 @@
   <p class="done-message" id="done-message"></p>
   <p class="done-facts" id="done-facts"></p>
   <p class="done-sync" id="done-sync"></p>
+  <div class="done-lap" id="done-lap" hidden></div>
   <button class="btn btn-primary btn-big" id="btn-done-again">続けて入力</button>
   <button class="btn btn-big" id="btn-done-top">TOPへ</button>
 </section>
@@ -181,19 +183,14 @@
   </div>
 </section>
 
-<!-- 今週がんばること（TOP・振り返りから開く） -->
-<div class="dialog-backdrop" id="change-dialog" hidden>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="change-dialog-title">
+<!-- 周回の「終わった」（TOP の周回の表から開く） -->
+<div class="dialog-backdrop" id="lap-dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="lap-dialog-title">
     <div class="review-head">
-      <h3 class="plan-heading" id="change-dialog-title">今週がんばること</h3>
-      <button class="btn btn-small" id="btn-change-close" type="button">閉じる</button>
+      <h3 class="plan-heading" id="lap-dialog-title"></h3>
+      <button class="btn btn-small" id="btn-lap-close" type="button">閉じる</button>
     </div>
-    <div class="change-list" id="change-list"></div>
-    <div class="change-free">
-      <input class="plan-input change-input" id="change-input" type="text" autocomplete="off" aria-label="自分で書く" />
-      <button class="btn btn-small" id="btn-change-free" type="button">決める</button>
-    </div>
-    <button class="btn btn-small btn-link" id="btn-change-clear" type="button">取り消す</button>
+    <div id="lap-dialog-body"></div>
   </div>
 </div>
 
